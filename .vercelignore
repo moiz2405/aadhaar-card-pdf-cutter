@@ -1,0 +1,10 @@
+# Local-only files
+server.js
+start.cmd
+_downloads/
+_t_locked.pdf
+
+# Tooling / metadata
+node_modules/
+.vercel/
+*.log
