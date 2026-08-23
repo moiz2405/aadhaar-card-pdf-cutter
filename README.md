@@ -1,10 +1,10 @@
-# Aadhaar Card PDF Cutter
+# ID Card Cutter
 
-A small, fully **offline** web app that unlocks your password-protected
-[e-Aadhaar](https://uidai.gov.in) PDF, lets you drag a box around the card,
-and downloads the cut region as a **PNG image** and/or a **PDF**.
+A small, fully **offline** web app that opens password-protected PDFs and
+images, lets you drag a box around the card, and downloads the cut region as a
+**PNG image** and/or a **PDF**.
 
-Everything runs in your browser. Your PDF is never uploaded anywhere.
+Everything runs in your browser. Your documents are never uploaded anywhere.
 
 ## Requirements
 
@@ -16,29 +16,34 @@ Everything runs in your browser. Your PDF is never uploaded anywhere.
 
 1. Double-click **`start.cmd`**.
    - This starts a tiny local server and opens `http://127.0.0.1:8080` in your browser.
-   - (Opening `index.html` directly may not work because browsers block PDF.js's
-     module worker over the `file://` protocol — that's why we use the server.)
-2. Drop your e-Aadhaar PDF onto the page (or click to browse).
-3. If the PDF is password-protected, enter the **name on the card** and the
-   **birth year**. The app tries the standard password automatically. You can
-   also expand **"Enter password manually"** to type it yourself.
+   - Opening `index.html` directly may not work because browsers block PDF.js's
+     module worker over the `file://` protocol.
+2. Select the document type, then drop a PDF or image onto the page (or browse
+   from your device). Supported image formats are JPG, PNG, and WebP.
+3. Unlocked PDFs open immediately. For locked documents, the form matches the
+   selected type:
+   - **Aadhaar:** first four letters of the name (uppercase) + birth year.
+   - **PAN:** date of birth in `DDMMYYYY` format.
+   - **Voter ID:** tries the Aadhaar-style password and DOB when both are supplied.
+   - **Driving License, Passport, Generic:** enter the password manually.
+   - You can always use the manual password field.
 4. Drag a box around the card on the preview. Use **Auto-detect** for a first
-   guess, then fine-tune with the corner handles (drag inside the box to move it).
-5. Choose **PNG** and/or **PDF** and click **Download**.
+   guess, then fine-tune with the corner handles or drag inside the box to move it.
+5. Choose **PNG** and/or **PDF**, then click **Download**.
 
-## The e-Aadhaar password
+## The Aadhaar password
 
 Official e-Aadhaar PDFs are locked with:
 
-\`\`\`
+```text
 <FIRST 4 LETTERS OF NAME IN UPPERCASE><4-DIGIT BIRTH YEAR>
-\`\`\`
+```
 
 Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
 
 - Spaces are ignored when computing the name part.
-- If your name has fewer than 4 letters, use the full uppercase name + birth year.
-- If that doesn't work, use the **manual password** option.
+- If your name has fewer than four letters, use the full uppercase name + birth year.
+- If that does not work, use the manual password option.
 
 ## Files
 

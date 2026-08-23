@@ -39,6 +39,14 @@ const downloadBtn = $('download-btn');
 const exportStatus = $('export-status');
 const toast = $('toast');
 const startOverLink = $('start-over-link');
+const docChips = document.querySelectorAll('.doc-chip');
+const unlockTitle = $('unlock-title');
+const unlockHint = $('unlock-hint');
+const fieldName = $('field-name');
+const fieldYear = $('field-year');
+const fieldDob = $('field-dob');
+const dobInput = $('dob-input');
+const fatalError = $('fatal-error');
 
 /* ------------------------------------------------------------------ *
  *  State
@@ -55,6 +63,15 @@ let viewport = null;       // CSS-pixel size of the page at currentScale
 let pixelScale = 1;        // device px per CSS px (dpr), canvas.width / viewport.width
 
 let crop = null; // { x, y, w, h } in CSS px (matches the displayed page)
+let docType = 'aadhaar';
+const DOC_SCHEMES = {
+  aadhaar: { name: 'Aadhaar', password: 'name+year', fields: ['name','year'], hint: 'First 4 letters of name (UPPER) + birth year, e.g. RAJE1990' },
+  pan: { name: 'PAN', password: 'dob', fields: ['dob'], hint: 'Date of birth in DDMMYYYY format, e.g. 15051990' },
+  epic: { name: 'Voter ID', password: 'name+year|dob', fields: ['name','year','dob'], hint: 'Try first 4 letters (UPPER) + birth year, or DOB in DDMMYYYY' },
+  dl: { name: 'Driving License', password: 'manual', fields: [], hint: 'Usually not password-protected. Enter manually if needed.' },
+  passport: { name: 'Passport', password: 'manual', fields: [], hint: 'Usually not password-protected. Enter manually if needed.' },
+  generic: { name: 'Generic', password: 'manual', fields: [], hint: 'Enter password manually if the PDF is locked.' }
+};
 
 /* ------------------------------------------------------------------ *
  *  Helpers
@@ -84,6 +101,16 @@ function showStep(step) {
 function baseName() {
   return fileName.replace(/\.pdf$/i, '').replace(/[^\w\-]+/g, '_') || 'aadhaar';
 }
+function resetUnlockForm() {
+  nameInput.value = '';
+  yearInput.value = '';
+  dobInput.value = '';
+  passwordInput.value = '';
+  unlockError.textContent = '';
+  unlockError.classList.add('hidden');
+  unlockBtn.disabled = false;
+}
+
 
 function downloadBlob(blob, filename) {
   const url = URL.createObjectURL(blob);
@@ -101,21 +128,71 @@ function downloadBlob(blob, filename) {
  * ------------------------------------------------------------------ */
 function onFileSelected(file) {
   if (!file) return;
-  if (!/\.pdf$/i.test(file.name) && file.type !== 'application/pdf') {
-    showToast('Please choose a PDF file.');
+  const isPdf = /\.pdf$/i.test(file.name) || file.type === 'application/pdf';
+  const isImage = /\.(jpe?g|png|webp)$/i.test(file.name) || file.type.startsWith('image/');
+  if (!isPdf && !isImage) {
+    showToast('Please choose a PDF or image file (JPG, PNG, WebP).');
     return;
   }
   fileName = file.name;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    pdfData = reader.result;
-    pdfDoc = null;
+  crop = null;
+  currentPage = 1;
+  resetUnlockForm();
+  updateCropUI();
+  if (isPdf) {
+    const reader = new FileReader();
+    reader.onload = async () => {
+      pdfData = reader.result;
+      pdfDoc = null;
+      await openPdf();
+    };
+    reader.onerror = () => showToast('Could not read the PDF.');
+    reader.readAsArrayBuffer(file);
+  } else {
+    loadImage(file);
+  }
+}
+
+async function loadImage(file) {
+  showToast('Loading image…', 1500);
+  const url = URL.createObjectURL(file);
+  const img = new Image();
+  img.onload = () => {
+    URL.revokeObjectURL(url);
+    const w = img.naturalWidth;
+    const h = img.naturalHeight;
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    canvas.width = Math.floor(w * dpr);
+    canvas.height = Math.floor(h * dpr);
+    canvas.style.width = w + 'px';
+    canvas.style.height = 'auto';
+    viewport = { width: w, height: h };
+    pixelScale = canvas.width / viewport.width;
+    currentScale = 1;
+    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    ctx.scale(pixelScale, pixelScale);
+    ctx.drawImage(img, 0, 0);
+    cropBox.classList.add('hidden');
     crop = null;
+    updateCropUI();
+    pageSelect.innerHTML = '';
+    const opt = document.createElement('option');
+    opt.value = '1';
+    opt.textContent = 'Page 1';
+    pageSelect.appendChild(opt);
+    pageSelect.value = '1';
+    pageCount.textContent = '/ 1 page';
+    pageControl.classList.add('hidden');
     currentPage = 1;
-    await openPdf();
+    pdfDoc = null;
+    showStep(stepPreview);
+    stepExport.classList.add('active');
   };
-  reader.onerror = () => showToast('Could not read the file.');
-  reader.readAsArrayBuffer(file);
+  img.onerror = () => {
+    URL.revokeObjectURL(url);
+    showToast('Could not load image. Try another format.', 3000);
+  };
+  img.src = url;
 }
 
 fileInput.addEventListener('change', () => onFileSelected(fileInput.files[0]));
@@ -139,32 +216,64 @@ startOverLink.addEventListener('click', (e) => {
   e.preventDefault();
   pdfDoc = null; pdfData = null; crop = null;
   fileInput.value = '';
+  resetUnlockForm();
+  updateCropUI();
   showStep(stepUpload);
 });
+
+// Document selector
+function updateUnlockFields() {
+  const scheme = DOC_SCHEMES[docType];
+  unlockTitle.textContent = 'This document is password-protected';
+  unlockHint.textContent = scheme.hint;
+  fieldName.classList.toggle('hidden', !scheme.fields.includes('name'));
+  fieldYear.classList.toggle('hidden', !scheme.fields.includes('year'));
+  fieldDob.classList.toggle('hidden', !scheme.fields.includes('dob'));
+  if (scheme.password === 'manual') {
+    fieldName.classList.add('hidden');
+    fieldYear.classList.add('hidden');
+    fieldDob.classList.add('hidden');
+    unlockHint.textContent = 'This document is usually not password-protected. If it is, enter the password manually below.';
+  }
+}
+docChips.forEach(chip => {
+  chip.addEventListener('click', () => {
+    docChips.forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    docType = chip.dataset.doc;
+    updateUnlockFields();
+  });
+});
+updateUnlockFields();
 
 /* ------------------------------------------------------------------ *
  *  PDF open / unlock
  * ------------------------------------------------------------------ */
-async function openPdf(password) {
+async function openPdf(passwords = []) {
   showToast('Opening PDF\u2026', 1500);
   try {
     // pdf.js transfers (detaches) the ArrayBuffer to its worker, so pass a
     // fresh copy every time — otherwise a password retry reuses a detached buffer.
     const params = { data: new Uint8Array(pdfData.slice(0)) };
-    if (password) params.password = password;
+    if (passwords.length) params.password = passwords[0];
     const task = pdfjs.getDocument(params);
     pdfDoc = await task.promise;
     await afterOpen();
   } catch (err) {
     if (err && err.name === 'PasswordException') {
-      if (password) {
-        unlockError.textContent = 'Incorrect password. Please check the name / birth year, or enter the password manually.';
+      if (passwords.length > 1) {
+        await openPdf(passwords.slice(1));
+        return;
+      }
+      if (passwords.length) {
+        unlockError.textContent = 'Incorrect password. Please check the document details, or enter the password manually.';
         unlockError.classList.remove('hidden');
         unlockBtn.disabled = false;
       } else {
         showStep(stepUnlock);
       }
     } else {
+      unlockBtn.disabled = false;
       console.error(err);
       showToast('Could not open this PDF: ' + (err && err.message ? err.message : 'unknown error'), 4000);
     }
@@ -191,23 +300,58 @@ async function afterOpen() {
   stepExport.classList.add('active'); // export controls appear below preview
 }
 
-unlockForm.addEventListener('submit', (e) => {
+unlockForm.addEventListener('submit', async (e) => {
   e.preventDefault();
   const manual = passwordInput.value.trim();
-  let pw = manual;
-  if (!pw) {
-    const name = nameInput.value.trim();
-    const year = yearInput.value.trim();
-    if (!name || !/^\d{4}$/.test(year)) {
-      unlockError.textContent = 'Enter the name and a 4-digit birth year (or type the password manually).';
+  const scheme = DOC_SCHEMES[docType];
+  const passwords = manual ? [manual] : [];
+
+  if (!manual) {
+    if (scheme.password === 'manual') {
+      unlockError.textContent = 'Please enter the password manually.';
       unlockError.classList.remove('hidden');
       return;
     }
-    pw = name.toUpperCase().replace(/\s+/g, '').slice(0, 4) + year;
+
+    const name = nameInput.value.trim();
+    const year = yearInput.value.trim();
+    const dob = dobInput.value.trim();
+    const hasNameYear = Boolean(name) && /^\d{4}$/.test(year);
+    const hasDob = /^\d{8}$/.test(dob);
+
+    if (scheme.password === 'name+year') {
+      if (!hasNameYear) {
+        unlockError.textContent = 'Enter the name and a 4-digit birth year.';
+        unlockError.classList.remove('hidden');
+        return;
+      }
+      passwords.push(name.toUpperCase().replace(/\s+/g, '').slice(0, 4) + year);
+    } else if (scheme.password === 'dob') {
+      if (!hasDob) {
+        unlockError.textContent = 'Enter date of birth in DDMMYYYY format (8 digits).';
+        unlockError.classList.remove('hidden');
+        return;
+      }
+      passwords.push(dob);
+    } else if (scheme.password === 'name+year|dob') {
+      if (!hasNameYear && !hasDob) {
+        unlockError.textContent = 'Enter a name and 4-digit birth year, or DOB in DDMMYYYY format.';
+        unlockError.classList.remove('hidden');
+        return;
+      }
+      if (hasNameYear) passwords.push(name.toUpperCase().replace(/\s+/g, '').slice(0, 4) + year);
+      if (hasDob && !passwords.includes(dob)) passwords.push(dob);
+    }
+  }
+
+  if (!passwords.length) {
+    unlockError.textContent = 'Could not generate password. Enter manually.';
+    unlockError.classList.remove('hidden');
+    return;
   }
   unlockError.classList.add('hidden');
   unlockBtn.disabled = true;
-  openPdf(pw);
+  await openPdf(passwords);
 });
 
 /* ------------------------------------------------------------------ *
@@ -260,10 +404,10 @@ function canvasPoint(e) {
 function clampCrop() {
   const w = viewport.width, h = viewport.height;
   if (!crop) return;
-  crop.x = Math.max(0, Math.min(crop.x, w - 1));
-  crop.y = Math.max(0, Math.min(crop.y, h - 1));
-  crop.w = Math.max(4, Math.min(crop.w, w - crop.x));
-  crop.h = Math.max(4, Math.min(crop.h, h - crop.y));
+  crop.w = Math.max(4, Math.min(crop.w, w));
+  crop.h = Math.max(4, Math.min(crop.h, h));
+  crop.x = Math.max(0, Math.min(crop.x, w - crop.w));
+  crop.y = Math.max(0, Math.min(crop.y, h - crop.h));
 }
 
 function buildGrips() {
@@ -290,7 +434,7 @@ function positionGrips() {
 }
 
 function updateCropUI() {
-  if (!crop) {
+  if (!crop || crop.w < 4 || crop.h < 4) {
     cropBox.classList.add('hidden');
     cropInfo.textContent = '';
     downloadBtn.disabled = true;
@@ -307,8 +451,8 @@ function updateCropUI() {
   cropBox.style.width = crop.w * sx + 'px';
   cropBox.style.height = crop.h * sy + 'px';
   cropInfo.textContent =
-    'Selection: ' + Math.round(crop.w) + ' \u00d7 ' + Math.round(crop.h) +
-    ' px  (' + Math.round(crop.w / currentScale) + ' \u00d7 ' + Math.round(crop.h / currentScale) + ' pt)';
+    'Selection: ' + Math.round(crop.w) + ' × ' + Math.round(crop.h) +
+    ' px  (' + Math.round(crop.w / currentScale) + ' × ' + Math.round(crop.h / currentScale) + ' pt)';
   downloadBtn.disabled = false;
 }
 
@@ -326,7 +470,7 @@ canvasWrap.addEventListener('pointerdown', (e) => {
     return;
   }
 
-  if (crop && p.x >= crop.x && p.x <= crop.x + crop.w && p.y >= crop.y && p.y <= crop.y + crop.h) {
+  if (crop && crop.w >= 4 && crop.h >= 4 && p.x >= crop.x && p.x <= crop.x + crop.w && p.y >= crop.y && p.y <= crop.y + crop.h) {
     drag = { mode: 'move', startX: p.x, startY: p.y, orig: { ...crop } };
     canvasWrap.setPointerCapture(e.pointerId);
     e.preventDefault();
@@ -370,11 +514,11 @@ canvasWrap.addEventListener('pointermove', (e) => {
   clampCrop();
   updateCropUI();
 });
-
 function endDrag() { drag = null; }
 
 canvasWrap.addEventListener('pointerup', endDrag);
 canvasWrap.addEventListener('pointercancel', endDrag);
+
 
 resetCropBtn.addEventListener('click', () => {
   crop = null;
@@ -423,9 +567,12 @@ async function autoDetect() {
     }
   }
 
-  const comp = findLargestComponent(mask, dw, dh);
-  if (!comp) { showToast('Could not auto-detect. Draw a box manually.', 3000); return; }
-
+  const expectedAr = (docType === 'passport') ? 125/88 : 85.6/53.98;
+  const comp = findLargestComponent(mask, dw, dh, expectedAr);
+  if (!comp) {
+    showToast('Could not auto-detect. Draw a box manually.', 3000);
+    return;
+  }
   // Convert downsampled device px -> CSS px
   crop = {
     x: (comp.minX / scaleDown) / pixelScale,
@@ -438,7 +585,7 @@ async function autoDetect() {
   showToast('Card detected. Adjust the box if needed.', 2200);
 }
 
-function findLargestComponent(mask, w, h) {
+function findLargestComponent(mask, w, h, expectedAr) {
   const seen = new Uint8Array(w * h);
   let best = null, bestScore = 0;
   const queue = new Int32Array(w * h);
@@ -470,6 +617,11 @@ function findLargestComponent(mask, w, h) {
       let score = area;
       if (ar >= 1.1 && ar <= 2.4) score *= 2;     // card-like aspect ratio
       if (bw < w * 0.95 && bh < h * 0.95) score *= 1.5; // not the full page
+      if (expectedAr) {
+        const ratioDiff = Math.abs(ar - expectedAr);
+        if (ratioDiff < 0.2) score *= 2;
+        else if (ratioDiff < 0.5) score *= 1.3;
+      }
       if (score > bestScore) { bestScore = score; best = { minX, maxX, minY, maxY, area }; }
     }
   }
@@ -541,6 +693,20 @@ downloadBtn.addEventListener('click', async () => {
 /* ------------------------------------------------------------------ *
  *  Init
  * ------------------------------------------------------------------ */
-buildGrips();
-positionGrips();
-showStep(stepUpload);
+try {
+  buildGrips();
+  positionGrips();
+  showStep(stepUpload);
+} catch (e) {
+  console.error(e);
+  fatalError.classList.remove('hidden');
+  fatalError.textContent = 'App failed to load. Please use start.cmd or a static server.';
+}
+window.addEventListener('error', () => {
+  fatalError.classList.remove('hidden');
+  fatalError.textContent = 'App error. Please use start.cmd or a static server.';
+});
+window.addEventListener('unhandledrejection', () => {
+  fatalError.classList.remove('hidden');
+  fatalError.textContent = 'App error. Please use start.cmd or a static server.';
+});

@@ -259,7 +259,7 @@ code {
   border: 1.5px dashed var(--line-strong);
   border-radius: var(--radius);
   background: linear-gradient(180deg, var(--card-2) 0%, var(--card) 100%);
-  padding: 56px 24px;
+  padding: 40px 24px;
   text-align: center;
   cursor: pointer;
   transition: border-color .2s ease, background .2s ease, transform .2s ease;
@@ -271,8 +271,8 @@ code {
 .dropzone:focus-visible { outline: 2px solid var(--accent-bright); outline-offset: 3px; }
 .dropzone.dragover { transform: scale(1.005); }
 .dz-icon {
-  width: 76px; height: 76px;
-  margin: 0 auto 18px;
+  width: 64px; height: 64px;
+  margin: 0 auto 14px;
   display: grid; place-items: center;
   border-radius: 50%;
   color: var(--accent-bright);
@@ -283,24 +283,58 @@ code {
 .dz-title {
   margin: 0 0 4px;
   font-family: var(--font-display);
-  font-size: 22px;
+  font-size: 20px;
   font-weight: 620;
   letter-spacing: -.01em;
 }
-.dz-sub { margin: 0 0 20px; color: var(--ink-soft); font-size: 14px; }
+.dz-sub { margin: 0 0 16px; color: var(--ink-soft); font-size: 14px; }
 .dz-sub .link { color: var(--accent-bright); font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .dz-hint {
   display: inline-flex;
   align-items: center;
   gap: 7px;
   margin: 0;
-  padding: 7px 14px;
+  padding: 6px 14px;
   border-radius: 999px;
   border: 1px solid var(--line);
   background: var(--card-2);
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--ink-faint);
 }
+
+.doc-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+.doc-chip {
+  padding: 8px 16px;
+  border-radius: 999px;
+  border: 1.5px solid var(--line-strong);
+  background: var(--card-2);
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s ease;
+}
+.doc-chip:hover { border-color: var(--accent); color: var(--ink); }
+.doc-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #1a0f08;
+  box-shadow: 0 4px 12px -4px rgba(242, 112, 43, .5);
+}
+.fatal-error {
+  margin-bottom: 20px;
+  padding: 16px 20px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  border: 1px solid #4d2626;
+  color: var(--danger);
+}
+.fatal-error.hidden { display: none; }
 
 /* ---------- Forms ---------- */
 .field-row {

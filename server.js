@@ -37,9 +37,15 @@ const MIME = {
 };
 
 function resolveSafe(urlPath) {
-  let p = decodeURIComponent(urlPath);
+  let p;
+  try {
+    p = decodeURIComponent(urlPath);
+  } catch {
+    return null;
+  }
+  if (p.includes('\u0000')) return null;
   if (p === '/' || p === '') p = '/index.html';
-  // Normalize and prevent path traversal outside ROOT
+  // Normalize and prevent path traversal outside ROOT.
   const resolved = path.normalize(path.join(ROOT, p));
   if (!resolved.startsWith(ROOT + path.sep) && resolved !== ROOT) return null;
   return resolved;
