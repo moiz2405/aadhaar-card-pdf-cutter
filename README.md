@@ -66,6 +66,12 @@ Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
   running out of memory.
 - No data leaves your machine — PDF rendering and export happen entirely in the browser.
 
+### Windows 7 browser compatibility
+
+The website includes a compatibility shim for older browsers that do not
+provide `Promise.withResolvers`, which PDF.js requires. After an update, users
+should hard-refresh the website once so the new application script is loaded.
+
 ## Troubleshooting
 
 - **"Node.js not found"** — edit `start.cmd` and point `NODE` to your `node.exe`.

@@ -191,9 +191,11 @@
     <p><a href="#" id="start-over-link">Start over with a new PDF</a></p>
   </footer>
 
+  <!-- Compatibility for older Windows 7 browsers; load before the module. -->
+  <script src="vendor/promise-compat.js"></script>
   <!-- jsPDF (UMD) exposes window.jspdf -->
   <script src="vendor/jspdf.umd.min.js"></script>
   <!-- pdf.js ES module -->
-  <script type="module" src="app.js"></script>
+  <script type="module" src="app.js?v=promise-compat-1"></script>
 </body>
 </html>

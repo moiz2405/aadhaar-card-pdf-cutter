@@ -1,7 +1,7 @@
 // Aadhaar Card PDF Cutter - main application logic
 import * as pdfjs from './vendor/pdf.min.mjs';
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf.worker.min.mjs', import.meta.url).toString();
+pdfjs.GlobalWorkerOptions.workerSrc = new URL('./vendor/pdf-worker-bootstrap.mjs', import.meta.url).toString();
 
 /* ------------------------------------------------------------------ *
  *  DOM references
