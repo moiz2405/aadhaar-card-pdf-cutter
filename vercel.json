@@ -1,12 +1,11 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "version": 2,
-  "builds": [
-    {
-      "src": "**",
-      "use": "@vercel/static"
+  "functions": {
+    "api/parse-resume.js": {
+      "runtime": "nodejs20.x"
     }
-  ],
+  },
   "headers": [
     {
       "source": "/index.html",

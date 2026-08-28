@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Resume Maker — Build a simple resume</title>
+  <link rel="icon" href="logo.jpg" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="resume-page">
+  <header class="app-header">
+    <div class="header-inner">
+      <div class="brand">
+        <div class="brand-text">
+          <h1>Resume Maker</h1>
+          <p class="tagline">Simple, editable, ready to print</p>
+        </div>
+      </div>
+      <nav class="tool-nav" aria-label="Tools">
+        <a href="index.html">ID Card Cutter</a>
+        <span class="tool-nav-current">Resume Maker</span>
+      </nav>
+    </div>
+  </header>
+
+  <main class="container resume-container">
+    <section class="resume-intro">
+      <span class="kicker">A focused resume builder</span>
+      <h2>Start with a form, or let AI sort your notes.</h2>
+      <p class="muted">Use the same simple template either way. Your draft stays in this browser, and you can edit every field before printing.</p>
+    </section>
+
+    <div id="resume-toast" class="toast hidden" role="status" aria-live="polite"></div>
+
+    <div class="resume-workspace">
+      <section class="card resume-editor" aria-labelledby="editor-title">
+        <div class="section-head">
+          <span class="kicker">Editor</span>
+          <h2 id="editor-title">Your resume</h2>
+        </div>
+
+        <div class="resume-mode-tabs" role="tablist" aria-label="Resume input mode">
+          <button type="button" class="resume-mode active" data-mode="manual" role="tab" aria-selected="true">Fill it in</button>
+          <button type="button" class="resume-mode" data-mode="ai" role="tab" aria-selected="false">Make with AI</button>
+        </div>
+
+        <div id="ai-panel" class="resume-ai-panel hidden">
+          <label class="field" for="source-text">
+            <span>Paste anything about your experience</span>
+            <textarea id="source-text" rows="9" maxlength="20000" placeholder="Example: I am a frontend developer with 4 years of experience at Acme..."></textarea>
+          </label>
+          <div class="ai-actions">
+            <button type="button" class="btn btn-primary" id="parse-btn">Make with AI</button>
+            <span id="parse-status" class="parse-status muted" role="status" aria-live="polite" aria-busy="false"></span>
+          </div>
+          <p class="privacy-note">Only the text in this box is sent to the configured AI provider for parsing. Review all extracted details before using your resume.</p>
+        </div>
+
+        <form id="resume-form" autocomplete="off">
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Basics</h3>
+              <span class="muted">The details employers see first</span>
+            </div>
+            <div class="field-grid field-grid-wide">
+              <label class="field"><span>Full name</span><input type="text" data-field="fullName" placeholder="Your name" /></label>
+              <label class="field"><span>Professional title</span><input type="text" data-field="headline" placeholder="Frontend Developer" /></label>
+            </div>
+            <div class="field-grid">
+              <label class="field"><span>Email</span><input type="email" data-contact="email" placeholder="you@example.com" /></label>
+              <label class="field"><span>Phone</span><input type="tel" data-contact="phone" placeholder="+91 98765 43210" /></label>
+              <label class="field"><span>Location</span><input type="text" data-contact="location" placeholder="Bengaluru, India" /></label>
+              <label class="field"><span>LinkedIn</span><input type="text" data-contact="linkedin" placeholder="linkedin.com/in/you" /></label>
+              <label class="field"><span>Website</span><input type="text" data-contact="website" placeholder="yourwebsite.com" /></label>
+            </div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Summary</h3>
+              <span class="muted">A short introduction</span>
+            </div>
+            <label class="field"><span>Professional summary</span><textarea data-field="summary" rows="5" placeholder="A concise summary of your experience, strengths, and the work you want to do."></textarea></label>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Skills</h3>
+              <span class="muted">Separate skills with commas</span>
+            </div>
+            <label class="field"><span>Skills</span><input type="text" data-field="skills" placeholder="JavaScript, React, HTML, CSS" /></label>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Experience</h3>
+              <button type="button" class="btn btn-ghost btn-small" data-add="experience">+ Add experience</button>
+            </div>
+            <div id="experience-list" class="repeat-list"></div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Education</h3>
+              <button type="button" class="btn btn-ghost btn-small" data-add="education">+ Add education</button>
+            </div>
+            <div id="education-list" class="repeat-list"></div>
+          </div>
+
+          <div class="form-section">
+            <div class="form-section-head">
+              <h3>Projects <span class="optional-label">Optional</span></h3>
+              <button type="button" class="btn btn-ghost btn-small" data-add="projects">+ Add project</button>
+            </div>
+            <div id="projects-list" class="repeat-list"></div>
+          </div>
+
+          <div class="editor-actions">
+            <button type="button" class="btn btn-ghost" id="clear-btn">Clear draft</button>
+            <button type="button" class="btn btn-primary btn-lg" id="print-btn">Print / Save as PDF</button>
+          </div>
+        </form>
+      </section>
+
+      <section class="card resume-preview-panel" aria-labelledby="preview-title">
+        <div class="preview-toolbar">
+          <div>
+            <span class="kicker">Live preview</span>
+            <h2 id="preview-title">Simple template</h2>
+          </div>
+          <span class="preview-hint">Updates as you type</span>
+        </div>
+        <div class="resume-paper-wrap">
+          <article id="resume-preview" class="resume-paper" aria-label="Resume preview">
+            <header class="resume-paper-header">
+              <h1 id="preview-name">Your Name</h1>
+              <p id="preview-headline" class="preview-headline"></p>
+              <div id="preview-contact" class="preview-contact"></div>
+            </header>
+
+            <section id="preview-summary-section" class="preview-section hidden">
+              <h2>Profile</h2>
+              <p id="preview-summary"></p>
+            </section>
+            <section id="preview-skills-section" class="preview-section hidden">
+              <h2>Skills</h2>
+              <p id="preview-skills"></p>
+            </section>
+            <section id="preview-experience-section" class="preview-section hidden">
+              <h2>Experience</h2>
+              <div id="preview-experience"></div>
+            </section>
+            <section id="preview-education-section" class="preview-section hidden">
+              <h2>Education</h2>
+              <div id="preview-education"></div>
+            </section>
+            <section id="preview-projects-section" class="preview-section hidden">
+              <h2>Projects</h2>
+              <div id="preview-projects"></div>
+            </section>
+          </article>
+        </div>
+      </section>
+    </div>
+  </main>
+
+  <footer class="app-footer resume-footer">
+    <p>Drafts are saved only in this browser. AI parsing sends pasted text to the configured provider.</p>
+    <p class="footer-credit">
+      <img src="logo.jpg" alt="" class="footer-logo" />
+      <span>Made by <a href="https://almoizkhan.tech" target="_blank" rel="noopener">Almoiz Khan</a></span>
+    </p>
+  </footer>
+
+  <script src="resume.js"></script>
+</body>
+</html>

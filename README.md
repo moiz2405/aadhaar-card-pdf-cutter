@@ -1,14 +1,21 @@
-# ID Card Cutter
+# ID Card Cutter + Resume Maker
 
-A small, fully **offline** web app that opens password-protected PDFs and
-images, lets you drag a box around the card, and downloads the cut region as a
-**PNG image** and/or a **PDF**.
+A small browser-first web app with two tools:
 
-Everything runs in your browser. Your documents are never uploaded anywhere.
+- **ID Card Cutter** opens password-protected PDFs and images, lets you drag a
+  box around the card, and downloads the cut region as a **PNG image** and/or a
+  **PDF**.
+- **Resume Maker** collects resume details manually or parses pasted profile
+  text into one simple editable template, then uses the browser print dialog
+  to save it as a PDF.
+
+The ID Card Cutter remains fully offline. Resume drafts are saved only in the
+browser. When AI parsing is used, only the pasted text is sent to the selected
+server-side provider; provider credentials never reach the browser.
 
 ## Requirements
 
-- Windows with **Node.js** installed (default path `C:\Program Files\nodejs\node.exe`).
+- Windows with **Node.js 18+** installed (default path `C:\Program Files\nodejs\node.exe`).
   - If Node is installed elsewhere, edit `start.cmd` and change the `NODE` variable.
 - A modern browser (Chrome, Edge, or Firefox).
 
@@ -97,4 +104,42 @@ That's it. The `vercel.json` config sets sensible cache headers
 (immutable for `vendor/` assets, no-cache for the entry page).
 
 > The local Node server (`server.js` / `start.cmd`) is only for offline use on
-> your own PC. On Vercel, static hosting serves the exact same files.
+> your own PC. It also serves the local resume parsing API when AI environment
+> variables are configured.
+
+## Resume Maker AI setup
+
+The AI endpoint is `POST /api/parse-resume`. The provider is selected on the
+server with a comma-separated fallback list:
+
+```text
+RESUME_AI_PROVIDERS=opencode,hcnsec
+```
+
+The default provider is the keyless OpenCode Zen free tier:
+
+```text
+OPENCODE_BASE_URL=https://opencode.ai/zen/v1
+OPENCODE_MODEL=hy3-free
+```
+
+To enable the HCNSEC fallback, set its key in the deployment environment. Do
+not commit it to this repository or put it in browser JavaScript:
+
+```text
+HCNSEC_BASE_URL=https://api.hcnsec.cn/v1
+HCNSEC_MODEL=MiniMax-M3
+HCNSEC_API_KEY=replace-with-your-server-secret
+```
+
+An OpenAI adapter is also available when desired:
+
+```text
+RESUME_AI_PROVIDERS=openai
+OPENAI_MODEL=replace-with-a-model-id
+OPENAI_API_KEY=replace-with-your-server-secret
+```
+
+For local use, set the variables in the shell before running `start.cmd`.
+For Vercel, add them under the project environment variables and redeploy.
+The manual resume form works even when no AI provider is configured.

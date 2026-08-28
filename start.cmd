@@ -1,5 +1,5 @@
 @echo off
-rem Aadhaar Card PDF Cutter - one-click launcher
+rem ID Card Cutter + Resume Maker - one-click launcher
 setlocal
 
 set "NODE=C:\Program Files\nodejs\node.exe"
@@ -19,7 +19,7 @@ set "PORT=%PORT%"
 
 cd /d "%~dp0"
 
-echo Starting Aadhaar Card PDF Cutter...
+echo Starting ID Card Cutter + Resume Maker...
 echo URL: http://127.0.0.1:%PORT%
 echo.
 

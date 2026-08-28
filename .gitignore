@@ -1,0 +1,6 @@
+.env
+.env.*
+!.env.example
+
+# Local browser/test artifacts
+resume-prototype.png

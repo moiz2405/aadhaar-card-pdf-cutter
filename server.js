@@ -8,8 +8,31 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const { URL } = require('url');
+const {
+  parseResumeRequest,
+  ResumeServiceError,
+  getClientId,
+} = require('./lib/resume-service.cjs');
 
 const ROOT = __dirname;
+
+function loadDotEnv() {
+  const envPath = path.join(ROOT, '.env');
+  if (!fs.existsSync(envPath)) return;
+  const contents = fs.readFileSync(envPath, 'utf8');
+  for (const line of contents.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed.startsWith('#')) continue;
+    const separator = trimmed.indexOf('=');
+    if (separator <= 0) continue;
+    const key = trimmed.slice(0, separator).trim();
+    const value = trimmed.slice(separator + 1).trim().replace(/^(['"])(.*)\1$/, '$2');
+    if (key && process.env[key] === undefined) process.env[key] = value;
+  }
+}
+
+loadDotEnv();
+
 const PORT = Number(process.env.PORT) || 8080;
 const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
 
@@ -17,6 +40,7 @@ const OPEN_BROWSER = process.env.OPEN_BROWSER === '1';
 // resolves to IPv6 ::1 while "127.0.0.1" is IPv4 — listening on both makes
 // either URL work. Binding to loopback only keeps the app private to this PC.
 const HOSTS = ['127.0.0.1', '::1'];
+const MAX_API_BODY_BYTES = 30000;
 
 const MIME = {
   '.html': 'text/html; charset=utf-8',
@@ -63,9 +87,80 @@ function openBrowser() {
   cmd.unref();
 }
 
+function sendJson(res, status, payload) {
+  res.writeHead(status, {
+    'Content-Type': 'application/json; charset=utf-8',
+    'Cache-Control': 'no-store',
+  });
+  res.end(JSON.stringify(payload));
+}
+
+function readJsonBody(req) {
+  return new Promise((resolve, reject) => {
+    let raw = '';
+    let tooLarge = false;
+
+    req.on('data', (chunk) => {
+      if (tooLarge) return;
+      if (Buffer.byteLength(raw) + Buffer.byteLength(chunk) > MAX_API_BODY_BYTES) {
+        tooLarge = true;
+        return;
+      }
+      raw += chunk;
+    });
+    req.on('end', () => {
+      if (tooLarge) {
+        reject(new ResumeServiceError('request_too_large', 'Request body is too large.', 413));
+        return;
+      }
+      try {
+        resolve(JSON.parse(raw || '{}'));
+      } catch {
+        reject(new ResumeServiceError('invalid_json', 'Send valid JSON.', 400));
+      }
+    });
+    req.on('error', () => reject(new ResumeServiceError('request_error', 'Could not read the request.', 400)));
+  });
+}
+
+async function handleResumeParse(req, res) {
+  if (req.method !== 'POST') {
+    res.setHeader('Allow', 'POST');
+    sendJson(res, 405, { error: { code: 'method_not_allowed', message: 'Use POST for resume parsing.' } });
+    return;
+  }
+
+  try {
+    const body = await readJsonBody(req);
+    const result = await parseResumeRequest({
+      body,
+      origin: req.headers.origin,
+      host: req.headers.host,
+      clientId: getClientId({
+        ip: req.socket && req.socket.remoteAddress,
+        forwardedFor: req.headers['x-forwarded-for'],
+      }),
+    });
+    sendJson(res, 200, result);
+  } catch (error) {
+    const serviceError = error instanceof ResumeServiceError
+      ? error
+      : new ResumeServiceError('internal_error', 'Resume parsing failed.', 500);
+    sendJson(res, serviceError.statusCode, {
+      error: { code: serviceError.code, message: serviceError.message },
+    });
+  }
+}
+
 function handleRequest(req, res) {
   try {
     const url = new URL(req.url, 'http://127.0.0.1');
+
+    if (url.pathname === '/api/parse-resume') {
+      handleResumeParse(req, res);
+      return;
+    }
+
     const filePath = resolveSafe(url.pathname);
 
     if (!filePath) {
