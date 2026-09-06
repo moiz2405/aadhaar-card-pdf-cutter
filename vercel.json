@@ -3,7 +3,7 @@
   "version": 2,
   "functions": {
     "api/parse-resume.js": {
-      "runtime": "nodejs20.x"
+      "maxDuration": 30
     }
   },
   "headers": [
