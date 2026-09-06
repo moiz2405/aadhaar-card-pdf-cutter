@@ -579,7 +579,7 @@ code {
 .app-footer a { color: var(--ink-soft); font-weight: 600; }
 
 /* ---------- Stepper state helpers (pure CSS, mirrors app.js flow) ---------- */
-/* Export step lights up whenever the export card is shown (app.js adds
+/* Export step lights up whenever the export card is shown (id-card-cutter.js adds
    .active to #step-export directly without showStep) */
 body:has(#step-export.active) .step-indicator[data-step="export"] { color: var(--accent-bright); }
 body:has(#step-export.active) .step-indicator[data-step="export"] .dot {

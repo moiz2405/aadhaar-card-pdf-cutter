@@ -44,7 +44,7 @@
       ]
     },
     {
-      "source": "/app.js",
+      "source": "/id-card-cutter.js",
       "headers": [
         {
           "key": "Cache-Control",
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "source": "/resume.js",
+      "source": "/resume-maker.js",
       "headers": [
         {
           "key": "Cache-Control",

@@ -58,7 +58,7 @@ Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
 |------|---------|
 | `index.html` | App UI |
 | `style.css` | Styling |
-| `app.js` | PDF load/unlock, rendering, crop, and export logic |
+| `id-card-cutter.js` | PDF load/unlock, rendering, crop, and export logic |
 | `server.js` | Tiny local static server (Node core, no dependencies) |
 | `start.cmd` | One-click launcher |
 | `vendor/` | Vendored pdf.js (4.10.38) and jsPDF (2.5.1) — the app works offline |
