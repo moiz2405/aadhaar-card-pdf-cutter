@@ -57,6 +57,13 @@ test('server bundle allowlist covers every static entry file', () => {
   const ppSrc = fs.readFileSync(path.join(ROOT, 'passport-photos.js'), 'utf8');
   const bare = [...ppSrc.matchAll(/['"](vendor\/[^'"]+)['"]/g)].map((m) => m[1]);
   assert.deepEqual(bare, [], `bare vendor specifiers break import(): ${bare.join(', ')}`);
+  // Engine URLs feed dynamic import() (script-relative) and fetch()
+  // (document-relative): only root-absolute paths are correct for both.
+  const mlPathsBlock = /function mlPaths\(\) \{[\s\S]*?\n\}/.exec(ppSrc)?.[0] || '';
+  for (const key of ['bundle', 'wasmDir', 'model']) {
+    const m = new RegExp(key + ":\\s*'([^']+)'").exec(mlPathsBlock);
+    assert.ok(m && m[1].startsWith('/'), `mlPaths.${key} must be root-absolute, got: ${m && m[1]}`);
+  }
   for (const page of ['index.html', 'resume.html', 'passport.html']) {
     const html = fs.readFileSync(path.join(ROOT, page), 'utf8');
     for (const match of html.matchAll(/<script\s+src="([^"]+)"/g)) {
