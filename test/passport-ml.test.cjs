@@ -36,9 +36,55 @@ test('confidence mapping honors a custom window', () => {
 });
 
 test('engine module exposes the lazy segmentation API', () => {
-  for (const fn of ['confidenceToKeep', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
+  for (const fn of ['confidenceToKeep', 'extractPersonConfidence', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
     assert.equal(typeof ML[fn], 'function', `missing export: ${fn}`);
   }
+});
+
+function stubMask(values, w, h, float) {
+  return {
+    width: w,
+    height: h,
+    getAsFloat32Array: () => Float32Array.from(values),
+    getAsUint8Array: () => Uint8Array.from(values),
+    closeCalls: 0,
+    close() { this.closeCalls += 1; },
+    float,
+  };
+}
+
+function approxEqual(actual, expected) {
+  assert.equal(actual.length, expected.length, 'length mismatch');
+  for (let i = 0; i < actual.length; i += 1) {
+    assert.ok(Math.abs(actual[i] - expected[i]) < 1e-6, `index ${i}: ${actual[i]} != ${expected[i]}`);
+  }
+}
+
+test('extraction prefers the last confidence mask (bg + person)', () => {
+  const bg = stubMask([0.1, 0.1, 0.1, 0.1], 2, 2);
+  const person = stubMask([0, 0.9, 0.8, 0.1], 2, 2);
+  const out = ML.extractPersonConfidence({ confidenceMasks: [bg, person], categoryMask: null });
+  approxEqual([...out.confidence], [0, 0.9, 0.8, 0.1]);
+  assert.equal(out.width, 2);
+  assert.equal(out.height, 2);
+});
+
+test('extraction accepts a single-channel person mask', () => {
+  const person = stubMask([0.2, 0.7, 0.9, 0.3], 2, 2);
+  const out = ML.extractPersonConfidence({ confidenceMasks: [person], categoryMask: null });
+  approxEqual([...out.confidence], [0.2, 0.7, 0.9, 0.3]);
+});
+
+test('extraction falls back to the hard category mask', () => {
+  const cat = stubMask([0, 1, 1, 0], 2, 2);
+  const out = ML.extractPersonConfidence({ confidenceMasks: [], categoryMask: cat });
+  approxEqual([...out.confidence], [0, 1, 1, 0]);
+});
+
+test('extraction returns null when no mask exists at all', () => {
+  assert.equal(ML.extractPersonConfidence({ confidenceMasks: [], categoryMask: null }), null);
+  assert.equal(ML.extractPersonConfidence({}), null);
+  assert.equal(ML.extractPersonConfidence(null), null);
 });
 
 test('failures carry their stage tag for diagnosis', () => {
