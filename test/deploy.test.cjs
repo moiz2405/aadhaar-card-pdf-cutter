@@ -38,4 +38,16 @@ test('server bundle allowlist covers every static entry file', () => {
     includeFiles.includes('lib/passport-bg.js'),
     'server includeFiles must cover the client background engine',
   );
+  for (const file of [
+    'vendor/mediapipe/vision_bundle.mjs',
+    'vendor/mediapipe/wasm/vision_wasm_internal.js',
+    'vendor/mediapipe/wasm/vision_wasm_internal.wasm',
+    'vendor/mediapipe/selfie_segmenter.tflite',
+    'lib/passport-ml.js',
+  ]) {
+    assert.ok(fs.existsSync(path.join(ROOT, file)), `expected vendored file: ${file}`);
+  }
+  const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
+  assert.ok(serverSrc.includes('.wasm'), 'server.js must serve .wasm for the AI runtime');
+  assert.ok(serverSrc.includes('.tflite'), 'server.js must serve the .tflite model');
 });

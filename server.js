@@ -59,6 +59,8 @@ const MIME = {
   '.md': 'text/markdown; charset=utf-8',
   '.woff': 'font/woff',
   '.woff2': 'font/woff2',
+  '.wasm': 'application/wasm',
+  '.tflite': 'application/octet-stream',
 };
 
 // Only these extensions are ever served as static files. In particular this

@@ -1,0 +1,18 @@
+Vendored third-party files for client-side portrait segmentation.
+All processing runs on-device in the visitor's browser; photos never leave
+the device. (Note: the MediaPipe runtime reports anonymous performance
+metrics to Google; see https://goo.gle/mediapipe-privacy.)
+
+1. @mediapipe/tasks-vision 1.0.1 — vision_bundle.mjs + wasm/
+   Source: https://www.npmjs.com/package/@mediapipe/tasks-vision
+   Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+   License text: http://www.apache.org/licenses/LICENSE-2.0
+
+2. selfie_segmenter.tflite — portrait segmentation model (256x256, float16;
+   background = class 0, person = class 1)
+   Source: https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite
+   Downloaded: 2026-09-06, 249537 bytes
+   SHA256: 191AC9529AE506EE0BEEFA6B2C945A172DAB9D07D1E802A290A4E4038226658B
+   Copyright Google LLC. Licensed under the Apache License, Version 2.0
+   (per the model card: "LICENSED UNDER Apache License, Version 2.0").
+   License text: http://www.apache.org/licenses/LICENSE-2.0

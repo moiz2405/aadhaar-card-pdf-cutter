@@ -65,6 +65,7 @@ Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
 | `server.js` | Local static server (Node core, no dependencies) — also the Vercel server entrypoint (exports the handler; only binds ports when run directly) |
 | `passport.html` / `passport-photos.js` | Passport photo sheet builder (frame, enhance, background, 8-up export) |
 | `lib/passport-layout.cjs` | Print-size and grid-packing math for passport sheets (unit-tested) |
+| `lib/passport-ml.js` + `vendor/mediapipe/` | On-device portrait cut-out (MediaPipe selfie model, Apache-2.0, see `vendor/mediapipe/NOTICE`) |
 | `start.cmd` | One-click launcher |
 | `vendor/` | Vendored pdf.js (4.10.38) and jsPDF (2.5.1) — the app works offline |
 

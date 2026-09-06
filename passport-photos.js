@@ -39,6 +39,7 @@ const brightInput = $('pp-bright');
 const contrastInput = $('pp-contrast');
 const satInput = $('pp-sat');
 const tolInput = $('pp-tol');
+const tolRow = $('pp-tol-row');
 const customColor = $('pp-bg-custom');
 const sizePills = [...document.querySelectorAll('#pp-size-selector .doc-chip')];
 const swatches = [...document.querySelectorAll('.pp-sw[data-bg]')];
@@ -59,6 +60,20 @@ let sheetCanvas = null;  // final 300 DPI grid
 let sheetLayout = null;
 let renderQueued = false;
 let toastTimer = null;
+
+// Smart cut-out state. The ML mask is computed once per photo at a capped
+// resolution, then re-framed per render with the same pan/zoom math as the
+// photo itself, so mask and image can never drift apart.
+const mlState = { key: null, maskCanvas: null, failed: false };
+let mlPromise = null;
+
+function mlPaths() {
+  return {
+    bundle: 'vendor/mediapipe/vision_bundle.mjs',
+    wasmDir: 'vendor/mediapipe/wasm',
+    model: 'vendor/mediapipe/selfie_segmenter.tflite',
+  };
+}
 
 function showToast(message, duration = 3000) {
   toast.textContent = message;
@@ -146,6 +161,7 @@ async function onFileSelected(file) {
     srcFile = file;
     srcImg = downscaleToWork(decoded);
     autoCache = { file: null, canvas: null };
+    mlState.key = null; mlState.maskCanvas = null; mlState.failed = false;
     fileName = file.name || 'passport';
     view = { zoom: 1, panX: 0, panY: 0 };
     enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
@@ -186,6 +202,7 @@ dropzone.addEventListener('drop', (e) => {
 
 $('pp-start-over').addEventListener('click', () => {
   srcFile = null; srcImg = null;
+  mlState.key = null; mlState.maskCanvas = null; mlState.failed = false;
   photoCanvas = null; sheetCanvas = null; sheetLayout = null;
   autoCache = { file: null, canvas: null };
   fileInput.value = '';
@@ -380,13 +397,15 @@ for (const [input, key] of [[brightInput, 'bright'], [contrastInput, 'contrast']
 }
 
 /* ---------------- Background swap (edge flood-fill) ---------------- */
-function bgSwap(targetCanvas, hexColor, tolerance) {
-  const w = targetCanvas.width;
-  const h = targetCanvas.height;
-  const tctx = targetCanvas.getContext('2d', { willReadFrequently: true });
+// Edge-tracing fallback (used when the AI engine is unavailable).
+// Same consensus-corner algorithm as the tested lib/passport-bg.js path.
+function bgFloodSwap(targetCanvas, hexColor, tolerance) {
   if (!window.PassportBG) {
     throw new Error('Background engine failed to load. Refresh the page and try again.');
   }
+  const w = targetCanvas.width;
+  const h = targetCanvas.height;
+  const tctx = targetCanvas.getContext('2d', { willReadFrequently: true });
   const img = tctx.getImageData(0, 0, w, h);
   const det = window.PassportBG.detectBackground(img.data, w, h, { tol: tolerance });
   if (det.aborted || det.bgFraction <= 0) {
@@ -396,6 +415,81 @@ function bgSwap(targetCanvas, hexColor, tolerance) {
   const soft = window.PassportBG.featherMask(det.mask, w, h, 2, 2);
   img.data.set(window.PassportBG.compositeOver(img.data, w, h, soft, hexColor));
   tctx.putImageData(img, 0, 0);
+}
+
+// Runs portrait segmentation once per photo and caches a keep-map canvas.
+// Mask detail beyond 800px is wasted (the model sees 256x256), so the cache
+// stays small no matter how large the upload is.
+async function ensureMLMask() {
+  if (mlState.key === srcFile && mlState.maskCanvas) return true;
+  if (!window.PassportML) throw new Error('Background AI failed to load.');
+  const { confidence } = await window.PassportML.segmentPerson(mlPaths(), srcImg.bmp);
+  const keep = window.PassportML.confidenceToKeep(confidence);
+  const side = Math.round(Math.sqrt(keep.length));
+  const small = document.createElement('canvas');
+  small.width = side; small.height = side;
+  const sctx = small.getContext('2d');
+  const sImg = sctx.createImageData(side, side);
+  for (let i = 0; i < keep.length; i += 1) {
+    sImg.data[i * 4] = keep[i];
+    sImg.data[i * 4 + 1] = keep[i];
+    sImg.data[i * 4 + 2] = keep[i];
+    sImg.data[i * 4 + 3] = 255;
+  }
+  sctx.putImageData(sImg, 0, 0);
+  const scale = Math.min(1, 800 / Math.max(srcImg.w, srcImg.h));
+  const mw = Math.max(1, Math.round(srcImg.w * scale));
+  const mh = Math.max(1, Math.round(srcImg.h * scale));
+  const mc = document.createElement('canvas');
+  mc.width = mw; mc.height = mh;
+  const mctx = mc.getContext('2d');
+  mctx.imageSmoothingEnabled = true;
+  mctx.imageSmoothingQuality = 'high';
+  mctx.drawImage(small, 0, 0, mw, mh);
+  mlState.key = srcFile;
+  mlState.maskCanvas = mc;
+  mlState.failed = false;
+  return true;
+}
+
+function mlMaskReady() {
+  return Boolean(mlState.key === srcFile && mlState.maskCanvas && !mlState.failed);
+}
+
+// Applies the cached ML mask with the identical cover transform as the
+// photo, so mask and image stay aligned under any pan/zoom.
+function applyMLMask(targetCanvas, hexColor) {
+  const w = targetCanvas.width;
+  const h = targetCanvas.height;
+  const t = document.createElement('canvas');
+  t.width = w; t.height = h;
+  const tctx = t.getContext('2d', { willReadFrequently: true });
+  coverDrawRaw(tctx, mlState.maskCanvas, w, h);
+  const pixels = tctx.getImageData(0, 0, w, h).data;
+  const soft = new Uint8Array(w * h);
+  for (let i = 0; i < soft.length; i += 1) soft[i] = pixels[i * 4];
+  const tctx2 = targetCanvas.getContext('2d', { willReadFrequently: true });
+  const img = tctx2.getImageData(0, 0, w, h);
+  const d = img.data;
+  const bgR = parseInt(hexColor.slice(1, 3), 16);
+  const bgG = parseInt(hexColor.slice(3, 5), 16);
+  const bgB = parseInt(hexColor.slice(5, 7), 16);
+  for (let i = 0; i < soft.length; i += 1) {
+    const keep = soft[i] / 255;
+    d[i * 4] = d[i * 4] * keep + bgR * (1 - keep);
+    d[i * 4 + 1] = d[i * 4 + 1] * keep + bgG * (1 - keep);
+    d[i * 4 + 2] = d[i * 4 + 2] * keep + bgB * (1 - keep);
+    d[i * 4 + 3] = 255;
+  }
+  tctx2.putImageData(img, 0, 0);
+}
+
+function bgSwap(targetCanvas, hexColor, tolerance) {
+  if (mlMaskReady()) {
+    applyMLMask(targetCanvas, hexColor);
+    return;
+  }
+  bgFloodSwap(targetCanvas, hexColor, tolerance);
 }
 
 swatches.forEach((sw) => {
@@ -445,6 +539,9 @@ function renderPhoto() {
     coverDrawRaw(octx, shaped, t.w, t.h);
     if ('filter' in octx) octx.filter = 'none';
     const color = bgColor();
+    // The tolerance slider only governs the edge-tracing fallback; the AI
+    // mask needs no tuning, so its row hides while AI is in charge.
+    tolRow.style.display = color && mlMaskReady() ? 'none' : '';
     if (color) bgSwap(out, color, bg.tol);
   }
   photoCanvas = out;
@@ -512,8 +609,26 @@ function renderGrid() {
   return c;
 }
 
-function renderAll() {
+function bgNeeded() {
+  return Boolean(srcImg) && bg.mode !== 'original';
+}
+
+async function renderAll() {
   try {
+    // First render with a non-Original background prepares the AI mask
+    // (one-time ~12 MB download, then cached per photo). Concurrent renders
+    // share the in-flight run; failures cascade to edge-tracing inside bgSwap.
+    if (bgNeeded() && mlState.key !== srcFile && !mlState.failed && window.PassportML) {
+      if (!mlPromise) {
+        statusEl.textContent = 'Preparing background AI (one-time ~12 MB download)…';
+        mlPromise = ensureMLMask().catch((err) => {
+          console.error(err);
+          mlState.failed = true;
+          showToast('Background AI unavailable — using edge tracing instead.', 4500);
+        }).finally(() => { mlPromise = null; });
+      }
+      await mlPromise;
+    }
     renderPhoto();
     renderGrid();
   } catch (err) {
