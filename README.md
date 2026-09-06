@@ -109,27 +109,31 @@ That's it. The `vercel.json` config sets sensible cache headers
 
 ## Resume Maker AI setup
 
-The AI endpoint is `POST /api/parse-resume`. The provider is selected on the
-server with a comma-separated fallback list:
+The AI endpoint is `POST /api/parse-resume`. By default it tries xKiro
+(`openai/gpt-5.6-luna`) first, then falls back to the keyless OpenCode Zen
+free tier:
 
 ```text
-RESUME_AI_PROVIDERS=opencode,xkiro
+RESUME_AI_PROVIDERS=xkiro,opencode
 ```
 
-The default provider is the keyless OpenCode Zen free tier:
+The only required setting is the xKiro key — the base URL, model, and
+provider order already default to the values below. Set the key in the
+deployment environment; do not commit it to this repository or put it in
+browser JavaScript:
 
 ```text
-OPENCODE_BASE_URL=https://opencode.ai/zen/v1
-OPENCODE_MODEL=hy3-free
+XKIRO_API_KEY=replace-with-your-server-secret
 ```
 
-To enable the xKiro fallback, set its key in the deployment environment. Do
-not commit it to this repository or put it in browser JavaScript:
+Optional overrides (defaults shown):
 
 ```text
 XKIRO_BASE_URL=https://api.xkiro.com/v1
 XKIRO_MODEL=openai/gpt-5.6-luna
-XKIRO_API_KEY=replace-with-your-server-secret
+RESUME_AI_PROVIDERS=xkiro,opencode
+OPENCODE_BASE_URL=https://opencode.ai/zen/v1
+OPENCODE_MODEL=hy3-free
 ```
 
 An OpenAI adapter is also available when desired:
