@@ -36,9 +36,47 @@ test('confidence mapping honors a custom window', () => {
 });
 
 test('engine module exposes the lazy segmentation API', () => {
-  for (const fn of ['confidenceToKeep', 'validMaskGeometry', 'extractPersonConfidence', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
+  for (const fn of ['confidenceToKeep', 'validMaskGeometry', 'framePerson', 'extractPersonConfidence', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
     assert.equal(typeof ML[fn], 'function', `missing export: ${fn}`);
   }
+});
+
+function approx(actual, expected, eps = 1e-6) {
+  assert.ok(Math.abs(actual - expected) <= eps, `${actual} != ${expected}`);
+}
+
+test('framePerson leaves a full-frame person alone', () => {
+  const f = ML.framePerson({ tW: 413, tH: 531, imgW: 413, imgH: 531, box: { x0: 0, y0: 0, x1: 413, y1: 531 } });
+  assert.equal(f.zoom, 1);
+  assert.equal(f.panX, 0);
+  assert.equal(f.panY, 0);
+});
+
+test('framePerson zooms a small centered person to fill height with headroom', () => {
+  const fit = (0.92 * 413) / 400;
+  const f = ML.framePerson({ tW: 413, tH: 531, imgW: 1000, imgH: 1000, box: { x0: 300, y0: 300, x1: 700, y1: 700 } });
+  approx(f.zoom, fit / 0.531, 1e-9);
+  approx(f.panX, 0);
+  approx(f.panY, 0.04 * 531, 1e-9);
+});
+
+test('framePerson pans an off-center person into frame', () => {
+  // Height binds here (300x400 box): fit = 0.88*531/400.
+  const fit = (0.88 * 531) / 400;
+  const f = ML.framePerson({ tW: 413, tH: 531, imgW: 1000, imgH: 1000, box: { x0: 600, y0: 300, x1: 900, y1: 700 } });
+  approx(f.zoom, fit / 0.531, 1e-9);
+  approx(f.panX, (1000 * fit) / 2 - 750 * fit, 1e-9);
+  assert.ok(f.panX < 0, 'person right of center needs negative pan');
+});
+
+test('framePerson clamps zoom for tiny subjects and cover-floors wide ones', () => {
+  const tiny = ML.framePerson({ tW: 413, tH: 531, imgW: 2000, imgH: 2000, box: { x0: 950, y0: 950, x1: 1050, y1: 1050 } });
+  assert.equal(tiny.zoom, 3);
+  // An 800px-wide person cannot fit 380px without uncovering: cover scale
+  // wins (zoom 1) and the centered person stays centered.
+  const wide = ML.framePerson({ tW: 413, tH: 531, imgW: 1000, imgH: 1000, box: { x0: 100, y0: 200, x1: 900, y1: 400 } });
+  assert.equal(wide.zoom, 1);
+  approx(wide.panX, 0);
 });
 
 test('mask geometry guard accepts exact buffers and rejects the rest', () => {

@@ -34,7 +34,6 @@ const zoomInput = $('pp-zoom');
 const zoomVal = $('pp-zoom-val');
 const autoBtn = $('pp-auto');
 const compareBtn = $('pp-compare');
-const maskBtn = $('pp-mask');
 const resetBtn = $('pp-reset');
 const brightInput = $('pp-bright');
 const contrastInput = $('pp-contrast');
@@ -50,10 +49,9 @@ let srcImg = null;       // { bmp, w, h } decoded + downscaled work image
 let fileName = 'passport';
 let preset = '35x45';
 let view = { zoom: 1, panX: 0, panY: 0 }; // pan in target px
-let enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
+let enhance = { auto: true, bright: 100, contrast: 100, sat: 100 };
 let bg = { mode: 'red', custom: '#E53935' };
 let comparing = false;
-let maskView = false;
 let autoCache = { file: null, canvas: null };
 let photoCanvas = null;  // final single photo at print px
 let sheetCanvas = null;  // final 300 DPI grid
@@ -66,14 +64,43 @@ let toastTimer = null;
 // photo itself, so mask and image can never drift apart.
 const mlState = { key: null, maskCanvas: null, maskDims: null, failed: false };
 let mlPromise = null;
+let autoFramedKey = null;
 
 function resetMLState() {
   mlState.key = null; mlState.maskCanvas = null; mlState.maskDims = null; mlState.failed = false;
-  maskView = false;
-  if (typeof maskBtn !== 'undefined' && maskBtn) {
-    maskBtn.classList.remove('active');
-    maskBtn.setAttribute('aria-pressed', 'false');
+  autoFramedKey = null;
+}
+
+// Fits the segmented person in frame (height-first with headroom) exactly
+// once per photo: runs after the first ML mask arrives, never fights the
+// user's own pan/zoom afterwards.
+function autoFrameFromMask() {
+  const mc = mlState.maskCanvas;
+  if (!mc || !window.PassportML || !srcImg) return;
+  const mw = mc.width;
+  const mh = mc.height;
+  const d = mc.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, mw, mh).data;
+  let x0 = mw; let y0 = mh; let x1 = -1; let y1 = -1;
+  for (let y = 0; y < mh; y += 1) {
+    for (let x = 0; x < mw; x += 1) {
+      if (d[(y * mw + x) * 4] > 127) {
+        if (x < x0) x0 = x;
+        if (x > x1) x1 = x;
+        if (y < y0) y0 = y;
+        if (y > y1) y1 = y;
+      }
+    }
   }
+  if (x1 < 0) return; // empty mask: keep centered cover
+  const k = srcImg.w / mw;
+  const t = targetDims();
+  const f = window.PassportML.framePerson({
+    tW: t.w, tH: t.h, imgW: srcImg.w, imgH: srcImg.h,
+    box: { x0: x0 * k, y0: y0 * k, x1: x1 * k, y1: y1 * k },
+  });
+  view.zoom = f.zoom; view.panX = f.panX; view.panY = f.panY;
+  zoomInput.value = String(Math.round(f.zoom * 100));
+  zoomVal.textContent = Math.round(f.zoom * 100) + '%';
 }
 
 function mlPaths() {
@@ -105,7 +132,7 @@ function targetDims() {
 
 /* ---------------- Upload ---------------- */
 function setControlsEnabled(on) {
-  [autoBtn, compareBtn, maskBtn, resetBtn, brightInput, contrastInput, satInput,
+  [autoBtn, compareBtn, resetBtn, brightInput, contrastInput, satInput,
     zoomInput, customColor, ...swatches, ...exportBtns,
   ].forEach((el) => { el.disabled = !on; });
   if (!on) {
@@ -177,8 +204,10 @@ async function onFileSelected(file) {
     resetMLState();
     fileName = file.name || 'passport';
     view = { zoom: 1, panX: 0, panY: 0 };
-    enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
+    enhance = { auto: true, bright: 100, contrast: 100, sat: 100 };
     comparing = false;
+    autoBtn.classList.add('active');
+    autoBtn.setAttribute('aria-pressed', 'true');
     zoomInput.value = '100';
     zoomVal.textContent = '100%';
     for (const [input, def] of [[brightInput, 100], [contrastInput, 100], [satInput, 100]]) {
@@ -232,6 +261,7 @@ sizePills.forEach((pill) => {
     pill.setAttribute('aria-checked', 'true');
     preset = pill.dataset.size;
     view.panX = 0; view.panY = 0; view.zoom = 1;
+    autoFramedKey = null;
     zoomInput.value = '100';
     zoomVal.textContent = '100%';
     renderAll();
@@ -384,20 +414,13 @@ compareBtn.addEventListener('click', () => {
   renderAll();
 });
 
-maskBtn.addEventListener('click', () => {
-  maskView = !maskView;
-  maskBtn.classList.toggle('active', maskView);
-  maskBtn.setAttribute('aria-pressed', String(maskView));
-  renderAll();
-});
-
 resetBtn.addEventListener('click', () => {
-  enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
+  enhance = { auto: true, bright: 100, contrast: 100, sat: 100 };
   comparing = false;
   compareBtn.classList.remove('active');
   compareBtn.setAttribute('aria-pressed', 'false');
-  autoBtn.classList.remove('active');
-  autoBtn.setAttribute('aria-pressed', 'false');
+  autoBtn.classList.add('active');
+  autoBtn.setAttribute('aria-pressed', 'true');
   for (const [input, def] of [[brightInput, 100], [contrastInput, 100], [satInput, 100]]) {
     input.value = String(def);
     input.closest('.pp-slider').querySelector('.pp-val').textContent = def + '%';
@@ -543,29 +566,7 @@ function renderPhoto() {
   // Display 1:1 (CSS scales responsively).
   canvas.width = t.w; canvas.height = t.h;
   canvas.getContext('2d').drawImage(out, 0, 0);
-  // Mask inspector: display-only grayscale of the AI keep-map. photoCanvas
-  // (and therefore grid + exports) is never touched by this view.
-  if (maskView && mlMaskReady()) drawMaskView();
   return out;
-}
-
-// Renders the cached ML keep-map into the display canvas using the same
-// cover transform as the photo, so any misalignment is directly visible.
-function drawMaskView() {
-  const t = targetDims();
-  const v = document.createElement('canvas');
-  v.width = t.w; v.height = t.h;
-  const vctx = v.getContext('2d');
-  coverDrawRaw(vctx, mlState.maskCanvas, t.w, t.h);
-  const pixels = vctx.getImageData(0, 0, t.w, t.h);
-  const d = pixels.data;
-  for (let i = 0; i < t.w * t.h; i += 1) {
-    d[i * 4 + 1] = d[i * 4];
-    d[i * 4 + 2] = d[i * 4];
-    d[i * 4 + 3] = 255;
-  }
-  const dctx = canvas.getContext('2d');
-  dctx.putImageData(pixels, 0, 0);
 }
 
 // Cover-fit draw against an explicit source (filter applied by the caller).
@@ -658,6 +659,10 @@ async function renderAll() {
         }).finally(() => { mlPromise = null; });
       }
       await mlPromise;
+    }
+    if (mlMaskReady() && autoFramedKey !== srcFile) {
+      autoFrameFromMask();
+      autoFramedKey = srcFile;
     }
     renderPhoto();
     renderGrid();
