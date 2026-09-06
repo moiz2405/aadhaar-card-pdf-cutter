@@ -194,6 +194,7 @@ function makeEntryHeader(title, type, index) {
   remove.dataset.remove = type;
   remove.dataset.index = String(index);
   remove.textContent = 'Remove';
+  remove.setAttribute('aria-label', `Remove ${title} ${index + 1}`);
   header.appendChild(remove);
   return header;
 }
@@ -319,6 +320,10 @@ function addText(parent, tag, value, className) {
   return node;
 }
 
+function isValidEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || '').trim());
+}
+
 function safeUrl(raw) {
   const value = text(raw, 300);
   if (!value) return '';
@@ -347,7 +352,9 @@ function renderContact() {
   previewContact.replaceChildren();
   const contact = draft.contact;
   const values = [];
-  if (contact.email) values.push({ value: contact.email, href: `mailto:${contact.email}` });
+  if (contact.email) values.push(isValidEmail(contact.email)
+    ? { value: contact.email, href: `mailto:${contact.email}` }
+    : { value: contact.email });
   if (contact.phone) values.push({ value: contact.phone, href: `tel:${contact.phone.replace(/[^+\d]/g, '')}` });
   if (contact.location) values.push({ value: contact.location });
   if (contact.linkedin) values.push({ value: contact.linkedin, href: safeUrl(contact.linkedin) });
@@ -444,7 +451,7 @@ function setMode(mode) {
   document.querySelectorAll('.resume-mode').forEach((button) => {
     const active = button.dataset.mode === mode;
     button.classList.toggle('active', active);
-    button.setAttribute('aria-selected', String(active));
+    button.setAttribute('aria-pressed', String(active));
   });
   aiPanel.classList.toggle('hidden', mode !== 'ai');
 }
@@ -475,11 +482,16 @@ async function parseWithAI() {
 
   parseButton.disabled = true;
   startParseProgress();
+  // 35s client timeout: matches the 30s server maxDuration plus cold-start
+  // headroom, and stops the spinner hanging forever on a stalled request.
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 35000);
   try {
     const response = await fetch('/api/parse-resume', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text: textToParse }),
+      signal: controller.signal,
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error && payload.error.message ? payload.error.message : 'Could not parse the text.');
@@ -494,10 +506,13 @@ async function parseWithAI() {
     showToast('Details added to your resume. Review them before printing.', 4500);
   } catch (error) {
     stopParseProgress();
-    const message = error.message || 'AI parsing failed. You can fill the form manually.';
+    const message = error && error.name === 'AbortError'
+      ? 'The request timed out. Please try again.'
+      : error.message || 'AI parsing failed. You can fill the form manually.';
     setParseStatus(message, 'error');
     showToast(message, 4500);
   } finally {
+    window.clearTimeout(timeout);
     stopParseProgress();
     parseButton.disabled = false;
   }

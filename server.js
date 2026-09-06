@@ -61,6 +61,14 @@ const MIME = {
   '.woff2': 'font/woff2',
 };
 
+// Only these extensions are ever served as static files. In particular this
+// blocks server-side code (.cjs), launchers (.cmd), and logs.
+const PUBLIC_EXTENSIONS = new Set(Object.keys(MIME));
+// Local-only files that must never be served even though their extension is public.
+const BLOCKED_FILES = new Set(['server.js', 'package.json', 'package-lock.json']);
+// Directories that are never served as static files.
+const BLOCKED_DIRS = new Set(['api', 'test', 'lib']);
+
 function resolveSafe(urlPath) {
   let p;
   try {
@@ -70,9 +78,20 @@ function resolveSafe(urlPath) {
   }
   if (p.includes('\u0000')) return null;
   if (p === '/' || p === '') p = '/index.html';
+  const normalized = path.posix.normalize('/' + String(p).replace(/\\/g, '/'));
+  const segments = normalized.split('/').filter(Boolean);
+  // Block dotfiles/dot-directories (.env, .env.example, .git/*) and traversal.
+  if (segments.some((segment) => segment === '..' || segment.startsWith('.'))) return null;
+  // Block underscore-prefixed leftovers (_downloads/, _t_locked.pdf).
+  if (segments.some((segment) => segment.startsWith('_'))) return null;
+  if (segments.length && BLOCKED_DIRS.has(segments[0])) return null;
+  const base = segments[segments.length - 1] || '';
+  if (BLOCKED_FILES.has(base)) return null;
   // Normalize and prevent path traversal outside ROOT.
-  const resolved = path.normalize(path.join(ROOT, p));
+  const resolved = path.normalize(path.join(ROOT, normalized));
   if (!resolved.startsWith(ROOT + path.sep) && resolved !== ROOT) return null;
+  const ext = path.extname(resolved).toLowerCase();
+  if (!PUBLIC_EXTENSIONS.has(ext)) return null;
   return resolved;
 }
 
@@ -98,12 +117,16 @@ function sendJson(res, status, payload) {
 function readJsonBody(req) {
   return new Promise((resolve, reject) => {
     let raw = '';
+    let receivedBytes = 0;
     let tooLarge = false;
 
     req.on('data', (chunk) => {
       if (tooLarge) return;
-      if (Buffer.byteLength(raw) + Buffer.byteLength(chunk) > MAX_API_BODY_BYTES) {
+      receivedBytes += Buffer.isBuffer(chunk) ? chunk.length : Buffer.byteLength(chunk);
+      if (receivedBytes > MAX_API_BODY_BYTES) {
         tooLarge = true;
+        // Stop a slow oversized body from tying up the connection.
+        req.destroy();
         return;
       }
       raw += chunk;
@@ -157,7 +180,11 @@ function handleRequest(req, res) {
     const url = new URL(req.url, 'http://127.0.0.1');
 
     if (url.pathname === '/api/parse-resume') {
-      handleResumeParse(req, res);
+      handleResumeParse(req, res).catch(() => {
+        if (!res.writableEnded) {
+          sendJson(res, 500, { error: { code: 'internal_error', message: 'Resume parsing failed.' } });
+        }
+      });
       return;
     }
 

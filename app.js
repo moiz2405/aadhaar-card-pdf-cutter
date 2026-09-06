@@ -132,6 +132,7 @@ function onFileSelected(file) {
   const isImage = /\.(jpe?g|png|webp)$/i.test(file.name) || file.type.startsWith('image/');
   if (!isPdf && !isImage) {
     showToast('Please choose a PDF or image file (JPG, PNG, WebP).');
+    fileInput.value = '';
     return;
   }
   fileName = file.name;
@@ -146,7 +147,7 @@ function onFileSelected(file) {
       pdfDoc = null;
       await openPdf();
     };
-    reader.onerror = () => showToast('Could not read the PDF.');
+    reader.onerror = () => { fileInput.value = ''; showToast('Could not read the PDF.'); };
     reader.readAsArrayBuffer(file);
   } else {
     loadImage(file);
@@ -175,7 +176,7 @@ async function loadImage(file) {
     cropBox.classList.add('hidden');
     crop = null;
     updateCropUI();
-    pageSelect.innerHTML = '';
+    pageSelect.replaceChildren();
     const opt = document.createElement('option');
     opt.value = '1';
     opt.textContent = 'Page 1';
@@ -238,8 +239,9 @@ function updateUnlockFields() {
 }
 docChips.forEach(chip => {
   chip.addEventListener('click', () => {
-    docChips.forEach(c => c.classList.remove('active'));
+    docChips.forEach(c => { c.classList.remove('active'); c.setAttribute('aria-checked', 'false'); });
     chip.classList.add('active');
+    chip.setAttribute('aria-checked', 'true');
     docType = chip.dataset.doc;
     updateUnlockFields();
   });
@@ -282,7 +284,7 @@ async function openPdf(passwords = []) {
 
 async function afterOpen() {
   const n = pdfDoc.numPages;
-  pageSelect.innerHTML = '';
+  pageSelect.replaceChildren();
   for (let i = 1; i <= n; i++) {
     const opt = document.createElement('option');
     opt.value = String(i);
@@ -361,14 +363,17 @@ async function renderPage(pageNumber) {
   const page = await pdfDoc.getPage(pageNumber);
   const base = page.getViewport({ scale: 1 });
   const maxBase = Math.max(base.width, base.height);
+  // Allow sub-1 scales so MAX_DIM actually caps huge pages; previously the
+  // `currentScale = 1` floor re-inflated them to full resolution.
   currentScale = Math.min(DEFAULT_SCALE, MAX_DIM / maxBase);
-  if (currentScale < 1) currentScale = 1;
+  if (!Number.isFinite(currentScale) || currentScale <= 0) currentScale = 1;
 
   viewport = page.getViewport({ scale: currentScale });
 
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  canvas.width = Math.floor(viewport.width * dpr);
-  canvas.height = Math.floor(viewport.height * dpr);
+  // Hard clamp: even a sub-1 scale combined with high DPR must not exceed MAX_DIM.
+  canvas.width = Math.min(MAX_DIM, Math.max(1, Math.floor(viewport.width * dpr)));
+  canvas.height = Math.min(MAX_DIM, Math.max(1, Math.floor(viewport.height * dpr)));
   canvas.style.width = viewport.width + 'px';
   canvas.style.height = 'auto';           // preserve aspect ratio when CSS shrinks the canvas
   pixelScale = canvas.width / viewport.width; // device px per viewport CSS px (= dpr)
@@ -384,8 +389,13 @@ async function renderPage(pageNumber) {
 }
 
 pageSelect.addEventListener('change', async () => {
-  currentPage = Number(pageSelect.value);
-  await renderPage(currentPage);
+  try {
+    currentPage = Number(pageSelect.value);
+    await renderPage(currentPage);
+  } catch (err) {
+    console.error(err);
+    showToast('Could not render that page: ' + (err && err.message ? err.message : 'unknown error'), 4000);
+  }
 });
 
 /* ------------------------------------------------------------------ *
@@ -411,25 +421,39 @@ function clampCrop() {
 }
 
 function buildGrips() {
+  const labels = {
+    nw: 'Resize top-left', n: 'Resize top', ne: 'Resize top-right',
+    e: 'Resize right', se: 'Resize bottom-right', s: 'Resize bottom',
+    sw: 'Resize bottom-left', w: 'Resize left',
+  };
   cropBox.querySelectorAll('.grip').forEach((g) => g.remove());
   for (const d of ['nw','n','ne','e','se','s','sw','w']) {
-    const g = document.createElement('span');
+    const g = document.createElement('button');
+    g.type = 'button';
     g.className = 'grip';
     g.dataset.dir = d;
+    g.setAttribute('aria-label', labels[d]);
+    g.tabIndex = -1;
     cropBox.appendChild(g);
   }
 }
 
 function positionGrips() {
+  // Buttons are 24px hit areas with the 12px visual dot inset by 6px, so the
+  // box origin sits 12px outside the corner to keep the dot centered on it.
   const positions = {
-    nw: ['-6px','-6px'], n: ['50%','-6px'], ne: ['calc(100% - 6px)','-6px'],
-    e:  ['calc(100% - 6px)','50%'], se: ['calc(100% - 6px)','calc(100% - 6px)'],
-    s:  ['50%','calc(100% - 6px)'], sw: ['-6px','calc(100% - 6px)'], w: ['-6px','50%'],
+    nw: ['-12px', '-12px', 'none'], n: ['50%', '-12px', 'translateX(-50%)'],
+    ne: ['calc(100% - 12px)', '-12px', 'none'],
+    e: ['calc(100% - 12px)', '50%', 'translateY(-50%)'],
+    se: ['calc(100% - 12px)', 'calc(100% - 12px)', 'none'],
+    s: ['50%', 'calc(100% - 12px)', 'translateX(-50%)'],
+    sw: ['-12px', 'calc(100% - 12px)', 'none'], w: ['-12px', '50%', 'translateY(-50%)'],
   };
   for (const g of cropBox.querySelectorAll('.grip')) {
-    const [l, t] = positions[g.dataset.dir];
+    const [l, t, transform] = positions[g.dataset.dir];
     g.style.left = l;
     g.style.top = t;
+    g.style.transform = transform;
   }
 }
 
@@ -437,6 +461,7 @@ function updateCropUI() {
   if (!crop || crop.w < 4 || crop.h < 4) {
     cropBox.classList.add('hidden');
     cropInfo.textContent = '';
+    cropBox.removeAttribute('aria-label');
     downloadBtn.disabled = true;
     return;
   }
@@ -453,6 +478,8 @@ function updateCropUI() {
   cropInfo.textContent =
     'Selection: ' + Math.round(crop.w) + ' × ' + Math.round(crop.h) +
     ' px  (' + Math.round(crop.w / currentScale) + ' × ' + Math.round(crop.h / currentScale) + ' pt)';
+  cropBox.setAttribute('role', 'application');
+  cropBox.setAttribute('aria-label', 'Crop selection. Use arrow keys to move, Shift plus arrows to resize.');
   downloadBtn.disabled = false;
 }
 
@@ -536,6 +563,9 @@ if (typeof ResizeObserver !== 'undefined') {
  * ------------------------------------------------------------------ */
 async function autoDetect() {
   if (!viewport) return;
+  if (autoDetectBtn.disabled) return;
+  autoDetectBtn.disabled = true;
+  autoDetectBtn.setAttribute('aria-busy', 'true');
   showToast('Detecting card\u2026', 1500);
 
   const SW = 480, SH = 480;
@@ -569,20 +599,25 @@ async function autoDetect() {
 
   const expectedAr = (docType === 'passport') ? 125/88 : 85.6/53.98;
   const comp = findLargestComponent(mask, dw, dh, expectedAr);
-  if (!comp) {
-    showToast('Could not auto-detect. Draw a box manually.', 3000);
-    return;
+  try {
+    if (!comp) {
+      showToast('Could not auto-detect. Draw a box manually.', 3000);
+      return;
+    }
+    // Convert downsampled device px -> CSS px
+    crop = {
+      x: (comp.minX / scaleDown) / pixelScale,
+      y: (comp.minY / scaleDown) / pixelScale,
+      w: ((comp.maxX - comp.minX + 1) / scaleDown) / pixelScale,
+      h: ((comp.maxY - comp.minY + 1) / scaleDown) / pixelScale,
+    };
+    clampCrop();
+    updateCropUI();
+    showToast('Card detected. Adjust the box if needed.', 2200);
+  } finally {
+    autoDetectBtn.disabled = false;
+    autoDetectBtn.removeAttribute('aria-busy');
   }
-  // Convert downsampled device px -> CSS px
-  crop = {
-    x: (comp.minX / scaleDown) / pixelScale,
-    y: (comp.minY / scaleDown) / pixelScale,
-    w: ((comp.maxX - comp.minX + 1) / scaleDown) / pixelScale,
-    h: ((comp.maxY - comp.minY + 1) / scaleDown) / pixelScale,
-  };
-  clampCrop();
-  updateCropUI();
-  showToast('Card detected. Adjust the box if needed.', 2200);
 }
 
 function findLargestComponent(mask, w, h, expectedAr) {
@@ -634,10 +669,10 @@ autoDetectBtn.addEventListener('click', autoDetect);
  *  Export
  * ------------------------------------------------------------------ */
 function extractRegion() {
-  const sx = Math.round(crop.x * pixelScale);
-  const sy = Math.round(crop.y * pixelScale);
-  const sw = Math.round(crop.w * pixelScale);
-  const sh = Math.round(crop.h * pixelScale);
+  const sx = Math.max(0, Math.min(Math.round(crop.x * pixelScale), Math.max(0, canvas.width - 1)));
+  const sy = Math.max(0, Math.min(Math.round(crop.y * pixelScale), Math.max(0, canvas.height - 1)));
+  const sw = Math.max(1, Math.min(Math.round(crop.w * pixelScale), canvas.width - sx));
+  const sh = Math.max(1, Math.min(Math.round(crop.h * pixelScale), canvas.height - sy));
   const off = document.createElement('canvas');
   off.width = sw;
   off.height = sh;
@@ -670,9 +705,15 @@ downloadBtn.addEventListener('click', async () => {
     }
 
     if (doPdf) {
+      if (!window.jspdf || !window.jspdf.jsPDF) {
+        throw new Error('PDF library failed to load. Refresh the page and try again.');
+      }
       const dataURL = region.toDataURL('image/png');
-      const wPt = crop.w / currentScale;
-      const hPt = crop.h / currentScale;
+      // Points sizing: 1pt = 1/72in. PDF pages use the document scale where
+      // available (PDF points); images use 300 DPI so an 1800px crop does not
+      // become a 25-inch page.
+      const wPt = pdfDoc ? (crop.w / currentScale) : (region.width * 72) / 300;
+      const hPt = pdfDoc ? (crop.h / currentScale) : (region.height * 72) / 300;
       const { jsPDF } = window.jspdf;
       const doc = new jsPDF({ unit: 'pt', format: [wPt, hPt], orientation: wPt >= hPt ? 'l' : 'p' });
       doc.addImage(dataURL, 'PNG', 0, 0, wPt, hPt);
@@ -686,7 +727,7 @@ downloadBtn.addEventListener('click', async () => {
     exportStatus.textContent = '';
     showToast('Export failed: ' + (err && err.message ? err.message : 'unknown error'), 4000);
   } finally {
-    downloadBtn.disabled = false;
+    updateCropUI();
   }
 });
 
@@ -702,11 +743,45 @@ try {
   fatalError.classList.remove('hidden');
   fatalError.textContent = 'App failed to load. Please use start.cmd or a static server.';
 }
-window.addEventListener('error', () => {
-  fatalError.classList.remove('hidden');
-  fatalError.textContent = 'App error. Please use start.cmd or a static server.';
+window.addEventListener('error', (event) => {
+  // Only boot failures are fatal. Runtime errors (e.g. a single failed page
+  // render, caught elsewhere with a toast) must not brick the whole app.
+  if (stepUpload && stepUpload.classList.contains('active') && !pdfDoc && !pdfData) {
+    fatalError.classList.remove('hidden');
+    fatalError.textContent = 'App failed to load. Please use start.cmd or a static server.';
+    return;
+  }
+  console.error(event && event.error ? event.error : event);
+  showToast('Something went wrong. Your file is still loaded — try again.', 4000);
 });
-window.addEventListener('unhandledrejection', () => {
-  fatalError.classList.remove('hidden');
-  fatalError.textContent = 'App error. Please use start.cmd or a static server.';
+window.addEventListener('unhandledrejection', (event) => {
+  if (stepUpload && stepUpload.classList.contains('active') && !pdfDoc && !pdfData) {
+    fatalError.classList.remove('hidden');
+    fatalError.textContent = 'App failed to load. Please use start.cmd or a static server.';
+    return;
+  }
+  console.error(event && event.reason ? event.reason : event);
+  showToast('Something went wrong. Your file is still loaded — try again.', 4000);
+});
+
+// Keyboard alternative to pointer dragging: focus the canvas area and use
+// arrows to move the selection, Shift+arrows to resize it.
+canvasWrap.tabIndex = 0;
+canvasWrap.setAttribute('role', 'application');
+canvasWrap.setAttribute('aria-label', 'Crop area. Draw with pointer, or use arrow keys on an existing selection.');
+canvasWrap.addEventListener('keydown', (e) => {
+  if (!crop || !viewport) return;
+  const step = e.shiftKey ? 0 : 10;
+  const grow = e.shiftKey ? 10 : 0;
+  let handled = true;
+  if (e.key === 'ArrowLeft') { if (grow) crop.w = Math.max(4, crop.w - grow); else crop.x -= step; }
+  else if (e.key === 'ArrowRight') { if (grow) crop.w += grow; else crop.x += step; }
+  else if (e.key === 'ArrowUp') { if (grow) crop.h = Math.max(4, crop.h - grow); else crop.y -= step; }
+  else if (e.key === 'ArrowDown') { if (grow) crop.h += grow; else crop.y += step; }
+  else handled = false;
+  if (handled) {
+    e.preventDefault();
+    clampCrop();
+    updateCropUI();
+  }
 });

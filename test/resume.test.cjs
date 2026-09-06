@@ -185,3 +185,95 @@ test('rejects an empty parse request before calling a provider', async () => {
     (error) => error instanceof ResumeServiceError && error.code === 'invalid_request' && error.statusCode === 400,
   );
 });
+
+test('defaults to xkiro then opencode with no provider env configured', async () => {
+  const previousFetch = global.fetch;
+  const previousProviders = process.env.RESUME_AI_PROVIDERS;
+  const previousProvider = process.env.RESUME_AI_PROVIDER;
+  const previousKey = process.env.XKIRO_API_KEY;
+  const payload = emptyResume();
+  payload.fullName = 'Default User';
+  const requests = [];
+
+  delete process.env.RESUME_AI_PROVIDERS;
+  delete process.env.RESUME_AI_PROVIDER;
+  process.env.XKIRO_API_KEY = 'test-key';
+  global.fetch = async (url, init) => {
+    requests.push(url);
+    return {
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(payload) } }] }),
+    };
+  };
+
+  try {
+    const result = await parseResumeText('Default User is a developer.');
+    assert.equal(result.fullName, 'Default User');
+    assert.deepEqual(requests, [
+      'https://api.xkiro.com/v1/chat/completions',
+      'https://opencode.ai/zen/v1/chat/completions',
+    ]);
+  } finally {
+    global.fetch = previousFetch;
+    if (previousProviders === undefined) delete process.env.RESUME_AI_PROVIDERS;
+    else process.env.RESUME_AI_PROVIDERS = previousProviders;
+    if (previousProvider === undefined) delete process.env.RESUME_AI_PROVIDER;
+    else process.env.RESUME_AI_PROVIDER = previousProvider;
+    if (previousKey === undefined) delete process.env.XKIRO_API_KEY;
+    else process.env.XKIRO_API_KEY = previousKey;
+  }
+});
+
+test('maps provider 401 to a 503 auth error and 429 to a 429 rate-limit error', async () => {
+  const previousFetch = global.fetch;
+  const previousProviders = process.env.RESUME_AI_PROVIDERS;
+
+  process.env.RESUME_AI_PROVIDERS = 'xkiro';
+  process.env.XKIRO_API_KEY = 'test-key';
+  global.fetch = async () => ({
+    ok: false,
+    status: 401,
+    headers: { get: () => null },
+    json: async () => ({}),
+  });
+
+  try {
+    await assert.rejects(
+      () => parseResumeText('Auth User is a developer.'),
+      (error) => error instanceof ResumeServiceError && error.code === 'provider_auth_error' && error.statusCode === 503,
+    );
+  } finally {
+    global.fetch = previousFetch;
+    if (previousProviders === undefined) delete process.env.RESUME_AI_PROVIDERS;
+    else process.env.RESUME_AI_PROVIDERS = previousProviders;
+  }
+
+  process.env.RESUME_AI_PROVIDERS = 'xkiro';
+  global.fetch = async () => ({
+    ok: false,
+    status: 429,
+    headers: { get: (name) => (name === 'retry-after' ? '30' : null) },
+    json: async () => ({}),
+  });
+
+  try {
+    await assert.rejects(
+      () => parseResumeText('Rate User is a developer.'),
+      (error) => error instanceof ResumeServiceError && error.code === 'provider_rate_limited' && error.statusCode === 429,
+    );
+  } finally {
+    global.fetch = previousFetch;
+    if (previousProviders === undefined) delete process.env.RESUME_AI_PROVIDERS;
+    else process.env.RESUME_AI_PROVIDERS = previousProviders;
+  }
+});
+
+test('rejects requests with too many keys', async () => {
+  const body = {};
+  for (let i = 0; i < 30; i += 1) body[`key${i}`] = 'x';
+  body.text = 'Hello';
+  await assert.rejects(
+    () => parseResumeRequest({ body, origin: 'http://localhost:8080', host: 'localhost:8080', clientId: 'test-keys' }),
+    (error) => error instanceof ResumeServiceError && error.code === 'invalid_request',
+  );
+});
