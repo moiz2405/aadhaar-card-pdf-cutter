@@ -51,7 +51,7 @@ let fileName = 'passport';
 let preset = '35x45';
 let view = { zoom: 1, panX: 0, panY: 0 }; // pan in target px
 let enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
-let bg = { mode: 'red', custom: '#E53935', tol: 32 };
+let bg = { mode: 'red', custom: '#E53935', tol: 24 };
 let comparing = false;
 let autoCache = { file: null, canvas: null };
 let photoCanvas = null;  // final single photo at print px
@@ -384,71 +384,17 @@ function bgSwap(targetCanvas, hexColor, tolerance) {
   const w = targetCanvas.width;
   const h = targetCanvas.height;
   const tctx = targetCanvas.getContext('2d', { willReadFrequently: true });
+  if (!window.PassportBG) {
+    throw new Error('Background engine failed to load. Refresh the page and try again.');
+  }
   const img = tctx.getImageData(0, 0, w, h);
-  const d = img.data;
-  const n = w * h;
-  const isBg = new Uint8Array(n);
-  const queue = new Int32Array(n);
-  let head = 0; let tail = 0;
-  const tol2 = 3 * tolerance * tolerance;
-
-  const push = (idx) => {
-    if (!isBg[idx]) { isBg[idx] = 1; queue[tail++] = idx; }
-  };
-  for (let x = 0; x < w; x += 1) { push(x); push((h - 1) * w + x); }
-  for (let y = 0; y < h; y += 1) { push(y * w); push(y * w + (w - 1)); }
-
-  const tryGrow = (next, cr, cg, cb) => {
-    if (isBg[next]) return;
-    const dr = d[next * 4] - cr;
-    const dg = d[next * 4 + 1] - cg;
-    const db = d[next * 4 + 2] - cb;
-    if (dr * dr + dg * dg + db * db <= tol2) push(next);
-  };
-
-  while (head < tail) {
-    const cur = queue[head++];
-    const cx = cur % w;
-    const cy = (cur / w) | 0;
-    const cr = d[cur * 4]; const cg = d[cur * 4 + 1]; const cb = d[cur * 4 + 2];
-    // 4-neighbors (no row wrap needed: x bounds checked explicitly).
-    if (cx > 0) tryGrow(cur - 1, cr, cg, cb);
-    if (cx < w - 1) tryGrow(cur + 1, cr, cg, cb);
-    if (cy > 0) tryGrow(cur - w, cr, cg, cb);
-    if (cy < h - 1) tryGrow(cur + w, cr, cg, cb);
+  const det = window.PassportBG.detectBackground(img.data, w, h, { tol: tolerance });
+  if (det.aborted || det.bgFraction <= 0) {
+    showToast('Could not find a plain background — keeping the original.', 4500);
+    return;
   }
-
-  // Feather the mask so edges don't look cut with scissors.
-  const mask = document.createElement('canvas');
-  mask.width = w; mask.height = h;
-  const mctx = mask.getContext('2d');
-  const maskImg = mctx.createImageData(w, h);
-  for (let i = 0; i < n; i += 1) {
-    const v = isBg[i] ? 0 : 255; // white = keep person
-    maskImg.data[i * 4] = v;
-    maskImg.data[i * 4 + 1] = v;
-    maskImg.data[i * 4 + 2] = v;
-    maskImg.data[i * 4 + 3] = 255;
-  }
-  mctx.putImageData(maskImg, 0, 0);
-  const soft = document.createElement('canvas');
-  soft.width = w; soft.height = h;
-  const sctx = soft.getContext('2d', { willReadFrequently: true });
-  sctx.filter = 'blur(1.5px)';
-  sctx.drawImage(mask, 0, 0);
-  sctx.filter = 'none';
-  const softData = sctx.getImageData(0, 0, w, h).data;
-
-  const bgR = parseInt(hexColor.slice(1, 3), 16);
-  const bgG = parseInt(hexColor.slice(3, 5), 16);
-  const bgB = parseInt(hexColor.slice(5, 7), 16);
-  for (let i = 0; i < n; i += 1) {
-    const keep = softData[i * 4] / 255; // 1 = person, 0 = background
-    d[i * 4] = d[i * 4] * keep + bgR * (1 - keep);
-    d[i * 4 + 1] = d[i * 4 + 1] * keep + bgG * (1 - keep);
-    d[i * 4 + 2] = d[i * 4 + 2] * keep + bgB * (1 - keep);
-    d[i * 4 + 3] = 255;
-  }
+  const soft = window.PassportBG.featherMask(det.mask, w, h, 2, 2);
+  img.data.set(window.PassportBG.compositeOver(img.data, w, h, soft, hexColor));
   tctx.putImageData(img, 0, 0);
 }
 
@@ -567,8 +513,13 @@ function renderGrid() {
 }
 
 function renderAll() {
-  renderPhoto();
-  renderGrid();
+  try {
+    renderPhoto();
+    renderGrid();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not update the preview: ' + (err && err.message ? err.message : 'unknown error'), 4000);
+  }
 }
 
 function scheduleRender() {

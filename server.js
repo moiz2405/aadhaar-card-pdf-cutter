@@ -66,8 +66,10 @@ const MIME = {
 const PUBLIC_EXTENSIONS = new Set(Object.keys(MIME));
 // Local-only files that must never be served even though their extension is public.
 const BLOCKED_FILES = new Set(['server.js', 'package.json', 'package-lock.json']);
-// Directories that are never served as static files.
-const BLOCKED_DIRS = new Set(['api', 'test', 'lib']);
+// Directories that are never served as static files. Note lib/ is NOT
+// blocked: it hosts client-side .js (e.g. passport-bg.js). Server-side
+// .cjs files stay blocked by the PUBLIC_EXTENSIONS filter below.
+const BLOCKED_DIRS = new Set(['api', 'test']);
 
 function resolveSafe(urlPath) {
   let p;
