@@ -7,7 +7,7 @@
     },
     "server.js": {
       "maxDuration": 30,
-      "includeFiles": "{index.html,resume.html,id-card-cutter.js,resume-maker.js,style.css,logo.jpg,vendor/**}"
+      "includeFiles": "{index.html,resume.html,passport.html,id-card-cutter.js,resume-maker.js,passport-photos.js,style.css,logo.jpg,vendor/**}"
     }
   },
   "headers": [
