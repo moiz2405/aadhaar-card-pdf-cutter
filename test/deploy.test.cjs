@@ -51,6 +51,12 @@ test('server bundle allowlist covers every static entry file', () => {
   // script must be reachable from the server bundle (explicitly or via a
   // covering glob like vendor/**).
   const vercelIncludes = vercel.functions['server.js'].includeFiles || '';
+  // Dynamic import() only resolves explicitly relative URLs — a bare
+  // 'vendor/...' specifier throws "Failed to resolve module specifier".
+  // (Already-relative './vendor/...' strings cannot match this pattern.)
+  const ppSrc = fs.readFileSync(path.join(ROOT, 'passport-photos.js'), 'utf8');
+  const bare = [...ppSrc.matchAll(/['"](vendor\/[^'"]+)['"]/g)].map((m) => m[1]);
+  assert.deepEqual(bare, [], `bare vendor specifiers break import(): ${bare.join(', ')}`);
   for (const page of ['index.html', 'resume.html', 'passport.html']) {
     const html = fs.readFileSync(path.join(ROOT, page), 'utf8');
     for (const match of html.matchAll(/<script\s+src="([^"]+)"/g)) {

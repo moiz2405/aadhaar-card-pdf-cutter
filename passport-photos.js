@@ -68,10 +68,13 @@ const mlState = { key: null, maskCanvas: null, failed: false };
 let mlPromise = null;
 
 function mlPaths() {
+  // NOTE: dynamic import() requires explicitly relative URLs — a bare
+  // path without ./ fails resolution ("Failed to resolve module
+  // specifier"). Keep the ./ prefix on all three.
   return {
-    bundle: 'vendor/mediapipe/vision_bundle.mjs',
-    wasmDir: 'vendor/mediapipe/wasm',
-    model: 'vendor/mediapipe/selfie_segmenter.tflite',
+    bundle: './vendor/mediapipe/vision_bundle.mjs',
+    wasmDir: './vendor/mediapipe/wasm',
+    model: './vendor/mediapipe/selfie_segmenter.tflite',
   };
 }
 
