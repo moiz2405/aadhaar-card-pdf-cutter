@@ -224,33 +224,46 @@ const servers = [];
 let bound = 0;
 let opened = false;
 
-for (const host of HOSTS) {
-  const srv = http.createServer(handleRequest);
-  servers.push(srv);
+function startLocalServers() {
+  for (const host of HOSTS) {
+    const srv = http.createServer(handleRequest);
+    servers.push(srv);
 
-  srv.on('error', (e) => {
-    if (e.code === 'EADDRINUSE') {
-      console.log('The app is already running at http://localhost:' + PORT + '/');
-      if (OPEN_BROWSER && !opened) { opened = true; openBrowser(); }
-      process.exit(0);
-    } else if (e.code === 'EADDRNOTAVAIL' || e.code === 'EAFNOSUPPORT') {
-      // This address family isn't available (e.g. no IPv6); that's fine.
-      return;
-    } else {
-      console.error('Server error:', e.message);
-    }
-  });
+    srv.on('error', (e) => {
+      if (e.code === 'EADDRINUSE') {
+        console.log('The app is already running at http://localhost:' + PORT + '/');
+        if (OPEN_BROWSER && !opened) { opened = true; openBrowser(); }
+        process.exit(0);
+      } else if (e.code === 'EADDRNOTAVAIL' || e.code === 'EAFNOSUPPORT') {
+        // This address family isn't available (e.g. no IPv6); that's fine.
+        return;
+      } else {
+        console.error('Server error:', e.message);
+      }
+    });
 
-  srv.listen(PORT, host, () => {
-    bound++;
-    if (bound === 1) {
-      console.log('Aadhaar Card PDF Cutter is ready:');
-      console.log('  http://127.0.0.1:' + PORT + '/');
-      console.log('  http://localhost:' + PORT + '/');
-      console.log('Keep this window open while you use the app. Press Ctrl+C to stop.');
-      // Open the browser only AFTER the server is actually listening,
-      // so the page loads on the first try (no connection-refused race).
-      if (OPEN_BROWSER && !opened) { opened = true; openBrowser(); }
-    }
-  });
+    srv.listen(PORT, host, () => {
+      bound++;
+      if (bound === 1) {
+        console.log('Aadhaar Card PDF Cutter is ready:');
+        console.log('  http://127.0.0.1:' + PORT + '/');
+        console.log('  http://localhost:' + PORT + '/');
+        console.log('Keep this window open while you use the app. Press Ctrl+C to stop.');
+        // Open the browser only AFTER the server is actually listening,
+        // so the page loads on the first try (no connection-refused race).
+        if (OPEN_BROWSER && !opened) { opened = true; openBrowser(); }
+      }
+    });
+  }
 }
+
+// Only bind ports when run directly (`node server.js` / start.cmd).
+// When required as a module — e.g. as the Vercel server entrypoint —
+// just export the request handler without side effects.
+if (require.main === module) {
+  startLocalServers();
+}
+
+module.exports = handleRequest;
+module.exports.handleRequest = handleRequest;
+module.exports.resolveSafe = resolveSafe;

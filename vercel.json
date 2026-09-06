@@ -4,6 +4,10 @@
   "functions": {
     "api/parse-resume.js": {
       "maxDuration": 30
+    },
+    "server.js": {
+      "maxDuration": 30,
+      "includeFiles": "{index.html,resume.html,id-card-cutter.js,resume-maker.js,style.css,logo.jpg,vendor/**}"
     }
   },
   "headers": [

@@ -1,5 +1,4 @@
-# Local-only files
-server.js
+# Local-only files (server.js is the Vercel server entrypoint, so it ships)
 start.cmd
 _downloads/
 _t_locked.pdf
@@ -8,3 +7,6 @@ _t_locked.pdf
 node_modules/
 .vercel/
 *.log
+
+# Secrets travel via Vercel environment variables, never in the bundle
+.env

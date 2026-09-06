@@ -59,7 +59,7 @@ Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
 | `index.html` | App UI |
 | `style.css` | Styling |
 | `id-card-cutter.js` | PDF load/unlock, rendering, crop, and export logic |
-| `server.js` | Tiny local static server (Node core, no dependencies) |
+| `server.js` | Local static server (Node core, no dependencies) — also the Vercel server entrypoint (exports the handler; only binds ports when run directly) |
 | `start.cmd` | One-click launcher |
 | `vendor/` | Vendored pdf.js (4.10.38) and jsPDF (2.5.1) — the app works offline |
 
