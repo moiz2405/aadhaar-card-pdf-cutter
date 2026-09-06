@@ -499,6 +499,7 @@ swatches.forEach((sw) => {
     sw.classList.add('active');
     sw.setAttribute('aria-checked', 'true');
     bg.mode = sw.dataset.bg;
+    mlState.failed = false; // re-picking retries a previously failed engine
     scheduleRender();
   });
 });
@@ -506,6 +507,7 @@ swatches.forEach((sw) => {
 customColor.addEventListener('input', () => {
   bg.custom = customColor.value.toUpperCase();
   bg.mode = 'custom';
+  mlState.failed = false; // re-picking retries a previously failed engine
   swatches.forEach((s) => { s.classList.remove('active'); s.setAttribute('aria-checked', 'false'); });
   document.querySelector('.pp-custom').classList.add('active');
   document.querySelector('.pp-custom').style.setProperty('--custom', bg.custom);
@@ -613,6 +615,19 @@ function bgNeeded() {
   return Boolean(srcImg) && bg.mode !== 'original';
 }
 
+function mlFailureReason(err) {
+  const text = (err && err.message) || String(err || '');
+  const stage = /\[ml:([a-z-]+)\]/.exec(text)?.[1];
+  const detail = text.replace(/\[ml:[a-z-]+\]\s*/, '').slice(0, 140);
+  const label = {
+    'engine-download': 'AI code download failed',
+    'runtime-download': 'AI runtime download failed',
+    'model-load': 'AI model failed to start',
+    segment: 'AI could not read this photo',
+  }[stage || ''] || 'Background AI failed';
+  return detail && detail !== label ? `${label}: ${detail}` : label;
+}
+
 async function renderAll() {
   try {
     // First render with a non-Original background prepares the AI mask
@@ -624,13 +639,16 @@ async function renderAll() {
         mlPromise = ensureMLMask().catch((err) => {
           console.error(err);
           mlState.failed = true;
-          showToast('Background AI unavailable — using edge tracing instead.', 4500);
+          showToast(`${mlFailureReason(err)} — using edge tracing instead.`, 6000);
         }).finally(() => { mlPromise = null; });
       }
       await mlPromise;
     }
     renderPhoto();
     renderGrid();
+    if (statusEl.textContent.startsWith('Preparing background AI')) {
+      statusEl.textContent = mlMaskReady() ? '' : statusEl.textContent;
+    }
   } catch (err) {
     console.error(err);
     showToast('Could not update the preview: ' + (err && err.message ? err.message : 'unknown error'), 4000);

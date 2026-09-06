@@ -36,9 +36,23 @@ test('confidence mapping honors a custom window', () => {
 });
 
 test('engine module exposes the lazy segmentation API', () => {
-  for (const fn of ['confidenceToKeep', 'ensureEngine', 'segmentPerson', 'dispose']) {
+  for (const fn of ['confidenceToKeep', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
     assert.equal(typeof ML[fn], 'function', `missing export: ${fn}`);
   }
+});
+
+test('failures carry their stage tag for diagnosis', () => {
+  const err = ML.tagError('model-load', new Error('fetch failed'));
+  assert.ok(err.message.startsWith('[ml:model-load] '));
+  assert.ok(err.message.includes('fetch failed'));
+  assert.equal(err.cause.message, 'fetch failed');
+});
+
+test('unreachable engine bundle rejects with the download stage tag', async () => {
+  await assert.rejects(
+    () => ML.segmentPerson({ bundle: './does-not-exist-pp.mjs', wasmDir: '.', model: 'x' }, null),
+    (err) => err instanceof Error && err.message.startsWith('[ml:engine-download]'),
+  );
 });
 
 test('UMD attaches to window when loaded as a plain script', () => {
