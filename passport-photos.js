@@ -39,8 +39,6 @@ const resetBtn = $('pp-reset');
 const brightInput = $('pp-bright');
 const contrastInput = $('pp-contrast');
 const satInput = $('pp-sat');
-const tolInput = $('pp-tol');
-const tolRow = $('pp-tol-row');
 const customColor = $('pp-bg-custom');
 const sizePills = [...document.querySelectorAll('#pp-size-selector .doc-chip')];
 const swatches = [...document.querySelectorAll('.pp-sw[data-bg]')];
@@ -53,7 +51,7 @@ let fileName = 'passport';
 let preset = '35x45';
 let view = { zoom: 1, panX: 0, panY: 0 }; // pan in target px
 let enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
-let bg = { mode: 'red', custom: '#E53935', tol: 24 };
+let bg = { mode: 'red', custom: '#E53935' };
 let comparing = false;
 let maskView = false;
 let autoCache = { file: null, canvas: null };
@@ -108,7 +106,7 @@ function targetDims() {
 /* ---------------- Upload ---------------- */
 function setControlsEnabled(on) {
   [autoBtn, compareBtn, maskBtn, resetBtn, brightInput, contrastInput, satInput,
-    zoomInput, tolInput, customColor, ...swatches, ...exportBtns,
+    zoomInput, customColor, ...swatches, ...exportBtns,
   ].forEach((el) => { el.disabled = !on; });
   if (!on) {
     comparing = false;
@@ -187,8 +185,6 @@ async function onFileSelected(file) {
       input.value = String(def);
       input.closest('.pp-slider').querySelector('.pp-val').textContent = def + '%';
     }
-    tolInput.value = '32';
-    tolInput.closest('.pp-slider').querySelector('.pp-val').textContent = '32';
     const t = targetDims();
     if (Math.min(srcImg.w, srcImg.h) < Math.min(t.w, t.h)) {
       showToast('Low-resolution photo — prints may look soft. A larger original is better.', 4500);
@@ -418,25 +414,11 @@ for (const [input, key] of [[brightInput, 'bright'], [contrastInput, 'contrast']
   });
 }
 
-/* ---------------- Background swap (edge flood-fill) ---------------- */
-// Edge-tracing fallback (used when the AI engine is unavailable).
-// Same consensus-corner algorithm as the tested lib/passport-bg.js path.
-function bgFloodSwap(targetCanvas, hexColor, tolerance) {
-  if (!window.PassportBG) {
-    throw new Error('Background engine failed to load. Refresh the page and try again.');
-  }
-  const w = targetCanvas.width;
-  const h = targetCanvas.height;
-  const tctx = targetCanvas.getContext('2d', { willReadFrequently: true });
-  const img = tctx.getImageData(0, 0, w, h);
-  const det = window.PassportBG.detectBackground(img.data, w, h, { tol: tolerance });
-  if (det.aborted || det.bgFraction <= 0) {
-    showToast('Could not find a plain background — keeping the original.', 4500);
-    return;
-  }
-  const soft = window.PassportBG.featherMask(det.mask, w, h, 2, 2);
-  img.data.set(window.PassportBG.compositeOver(img.data, w, h, soft, hexColor));
-  tctx.putImageData(img, 0, 0);
+/* ---------------- Background swap (AI cut-out) ---------------- */
+function bgSwap(targetCanvas, hexColor) {
+  // ML mask or nothing: without a usable cut-out the original photo stays.
+  if (!mlMaskReady()) return;
+  applyMLMask(targetCanvas, hexColor);
 }
 
 // Runs portrait segmentation once per photo and caches a keep-map canvas.
@@ -512,14 +494,6 @@ function applyMLMask(targetCanvas, hexColor) {
   tctx2.putImageData(img, 0, 0);
 }
 
-function bgSwap(targetCanvas, hexColor, tolerance) {
-  if (mlMaskReady()) {
-    applyMLMask(targetCanvas, hexColor);
-    return;
-  }
-  bgFloodSwap(targetCanvas, hexColor, tolerance);
-}
-
 swatches.forEach((sw) => {
   sw.addEventListener('click', () => {
     swatches.forEach((s) => { s.classList.remove('active'); s.setAttribute('aria-checked', 'false'); });
@@ -539,12 +513,6 @@ customColor.addEventListener('input', () => {
   swatches.forEach((s) => { s.classList.remove('active'); s.setAttribute('aria-checked', 'false'); });
   document.querySelector('.pp-custom').classList.add('active');
   document.querySelector('.pp-custom').style.setProperty('--custom', bg.custom);
-  scheduleRender();
-});
-
-tolInput.addEventListener('input', () => {
-  bg.tol = Number(tolInput.value);
-  tolInput.closest('.pp-slider').querySelector('.pp-val').textContent = tolInput.value;
   scheduleRender();
 });
 
@@ -569,10 +537,7 @@ function renderPhoto() {
     coverDrawRaw(octx, shaped, t.w, t.h);
     if ('filter' in octx) octx.filter = 'none';
     const color = bgColor();
-    // The tolerance slider only governs the edge-tracing fallback; the AI
-    // mask needs no tuning, so its row hides while AI is in charge.
-    tolRow.style.display = color && mlMaskReady() ? 'none' : '';
-    if (color) bgSwap(out, color, bg.tol);
+    if (color) bgSwap(out, color);
   }
   photoCanvas = out;
   // Display 1:1 (CSS scales responsively).
@@ -682,14 +647,14 @@ async function renderAll() {
   try {
     // First render with a non-Original background prepares the AI mask
     // (one-time ~12 MB download, then cached per photo). Concurrent renders
-    // share the in-flight run; failures cascade to edge-tracing inside bgSwap.
+    // share the in-flight run; a failed engine keeps the original photo.
     if (bgNeeded() && mlState.key !== srcFile && !mlState.failed && window.PassportML) {
       if (!mlPromise) {
         statusEl.textContent = 'Preparing background AI (one-time ~12 MB download)…';
         mlPromise = ensureMLMask().catch((err) => {
           console.error(err);
           mlState.failed = true;
-          showToast(`${mlFailureReason(err)} — using edge tracing instead.`, 6000);
+          showToast(`${mlFailureReason(err)} — keeping the original background.`, 6000);
         }).finally(() => { mlPromise = null; });
       }
       await mlPromise;

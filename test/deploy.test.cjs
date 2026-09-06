@@ -34,10 +34,6 @@ test('server bundle allowlist covers every static entry file', () => {
     );
   }
   assert.ok(includeFiles.includes('vendor/**'), 'server includeFiles must cover vendor/**');
-  assert.ok(
-    includeFiles.includes('lib/passport-bg.js'),
-    'server includeFiles must cover the client background engine',
-  );
   for (const file of [
     'vendor/mediapipe/vision_bundle.mjs',
     'vendor/mediapipe/wasm/vision_wasm_internal.js',
