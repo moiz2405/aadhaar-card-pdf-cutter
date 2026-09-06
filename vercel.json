@@ -48,6 +48,15 @@
       ]
     },
     {
+      "source": "/passport.html",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
       "source": "/id-card-cutter.js",
       "headers": [
         {
@@ -58,6 +67,15 @@
     },
     {
       "source": "/resume-maker.js",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/passport-photos.js",
       "headers": [
         {
           "key": "Cache-Control",

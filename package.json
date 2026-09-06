@@ -4,6 +4,6 @@
     "node": "22.x"
   },
   "scripts": {
-    "test": "node --test test/resume.test.cjs"
+    "test": "node --test \"test/*.test.cjs\""
   }
 }

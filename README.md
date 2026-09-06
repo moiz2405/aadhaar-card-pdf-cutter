@@ -8,6 +8,9 @@ A small browser-first web app with two tools:
 - **Resume Maker** collects resume details manually or parses pasted profile
   text into one simple editable template, then uses the browser print dialog
   to save it as a PDF.
+- **Passport Photos** frames a portrait, cleans it up, swaps the background
+  to red/white/blue, and lays out eight print-ready copies on a 4 × 6 in
+  sheet (PNG + exact-size PDF).
 
 The ID Card Cutter remains fully offline. Resume drafts are saved only in the
 browser. When AI parsing is used, only the pasted text is sent to the selected
@@ -60,6 +63,8 @@ Example: name **Rajesh Kumar**, born **1990** → password `RAJE1990`.
 | `style.css` | Styling |
 | `id-card-cutter.js` | PDF load/unlock, rendering, crop, and export logic |
 | `server.js` | Local static server (Node core, no dependencies) — also the Vercel server entrypoint (exports the handler; only binds ports when run directly) |
+| `passport.html` / `passport-photos.js` | Passport photo sheet builder (frame, enhance, background, 8-up export) |
+| `lib/passport-layout.cjs` | Print-size and grid-packing math for passport sheets (unit-tested) |
 | `start.cmd` | One-click launcher |
 | `vendor/` | Vendored pdf.js (4.10.38) and jsPDF (2.5.1) — the app works offline |
 
