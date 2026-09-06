@@ -73,14 +73,14 @@ test('opencode adapter sends a keyless chat-completions request and parses JSON'
 test('starts both configured providers and returns the first usable result', async () => {
   const previousFetch = global.fetch;
   const previousProviders = process.env.RESUME_AI_PROVIDERS;
-  const previousKey = process.env.HCNSEC_API_KEY;
+  const previousKey = process.env.XKIRO_API_KEY;
   const fastPayload = emptyResume();
-  fastPayload.fullName = 'Fast HCNSEC Result';
+  fastPayload.fullName = 'Fast xKiro Result';
   const requests = [];
   let slowSignal;
 
-  process.env.RESUME_AI_PROVIDERS = 'opencode,hcnsec';
-  process.env.HCNSEC_API_KEY = 'test-key';
+  process.env.RESUME_AI_PROVIDERS = 'opencode,xkiro';
+  process.env.XKIRO_API_KEY = 'test-key';
   global.fetch = async (url, init) => {
     requests.push(url);
     if (url.includes('opencode.ai')) {
@@ -105,19 +105,19 @@ test('starts both configured providers and returns the first usable result', asy
   };
 
   try {
-    const result = await parseResumeText('Fast HCNSEC Result is a developer.');
-    assert.equal(result.fullName, 'Fast HCNSEC Result');
+    const result = await parseResumeText('Fast xKiro Result is a developer.');
+    assert.equal(result.fullName, 'Fast xKiro Result');
     assert.deepEqual(requests, [
       'https://opencode.ai/zen/v1/chat/completions',
-      'https://api.hcnsec.cn/v1/chat/completions',
+      'https://api.xkiro.com/v1/chat/completions',
     ]);
     assert.equal(slowSignal.aborted, true);
   } finally {
     global.fetch = previousFetch;
     if (previousProviders === undefined) delete process.env.RESUME_AI_PROVIDERS;
     else process.env.RESUME_AI_PROVIDERS = previousProviders;
-    if (previousKey === undefined) delete process.env.HCNSEC_API_KEY;
-    else process.env.HCNSEC_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.XKIRO_API_KEY;
+    else process.env.XKIRO_API_KEY = previousKey;
   }
 });
 
@@ -148,13 +148,13 @@ test('rejects an incomplete reasoning response instead of silently parsing nothi
 test('tries the configured fallback provider after the first provider fails', async () => {
   const previousFetch = global.fetch;
   const previousProviders = process.env.RESUME_AI_PROVIDERS;
-  const previousKey = process.env.HCNSEC_API_KEY;
+  const previousKey = process.env.XKIRO_API_KEY;
   const payload = emptyResume();
   payload.fullName = 'Fallback User';
   const requests = [];
 
-  process.env.RESUME_AI_PROVIDERS = 'opencode,hcnsec';
-  process.env.HCNSEC_API_KEY = 'test-key';
+  process.env.RESUME_AI_PROVIDERS = 'opencode,xkiro';
+  process.env.XKIRO_API_KEY = 'test-key';
   global.fetch = async (url, init) => {
     requests.push({ url, init });
     if (url.includes('opencode.ai')) return { ok: false, json: async () => ({}) };
@@ -169,13 +169,13 @@ test('tries the configured fallback provider after the first provider fails', as
     assert.equal(result.fullName, 'Fallback User');
     assert.equal(requests.length, 2);
     assert.equal(requests[1].init.headers.Authorization, 'Bearer test-key');
-    assert.equal(JSON.parse(requests[1].init.body).model, 'MiniMax-M3');
+    assert.equal(JSON.parse(requests[1].init.body).model, 'openai/gpt-5.6-luna');
   } finally {
     global.fetch = previousFetch;
     if (previousProviders === undefined) delete process.env.RESUME_AI_PROVIDERS;
     else process.env.RESUME_AI_PROVIDERS = previousProviders;
-    if (previousKey === undefined) delete process.env.HCNSEC_API_KEY;
-    else process.env.HCNSEC_API_KEY = previousKey;
+    if (previousKey === undefined) delete process.env.XKIRO_API_KEY;
+    else process.env.XKIRO_API_KEY = previousKey;
   }
 });
 

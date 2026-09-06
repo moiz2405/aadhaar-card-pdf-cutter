@@ -113,7 +113,7 @@ The AI endpoint is `POST /api/parse-resume`. The provider is selected on the
 server with a comma-separated fallback list:
 
 ```text
-RESUME_AI_PROVIDERS=opencode,hcnsec
+RESUME_AI_PROVIDERS=opencode,xkiro
 ```
 
 The default provider is the keyless OpenCode Zen free tier:
@@ -123,13 +123,13 @@ OPENCODE_BASE_URL=https://opencode.ai/zen/v1
 OPENCODE_MODEL=hy3-free
 ```
 
-To enable the HCNSEC fallback, set its key in the deployment environment. Do
+To enable the xKiro fallback, set its key in the deployment environment. Do
 not commit it to this repository or put it in browser JavaScript:
 
 ```text
-HCNSEC_BASE_URL=https://api.hcnsec.cn/v1
-HCNSEC_MODEL=MiniMax-M3
-HCNSEC_API_KEY=replace-with-your-server-secret
+XKIRO_BASE_URL=https://api.xkiro.com/v1
+XKIRO_MODEL=openai/gpt-5.6-luna
+XKIRO_API_KEY=replace-with-your-server-secret
 ```
 
 An OpenAI adapter is also available when desired:
