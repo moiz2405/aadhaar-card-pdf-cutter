@@ -44,7 +44,7 @@
       ]
     },
     {
-      "source": "/:file.js",
+      "source": "/app.js",
       "headers": [
         {
           "key": "Cache-Control",
@@ -53,7 +53,7 @@
       ]
     },
     {
-      "source": "/:file.css",
+      "source": "/resume.js",
       "headers": [
         {
           "key": "Cache-Control",
@@ -62,11 +62,20 @@
       ]
     },
     {
-      "source": "/vendor/:lib((pdf\\.min\\.mjs|pdf\\.worker\\.min\\.mjs|jspdf\\.umd\\.min\\.js|pdf-worker-bootstrap\\.mjs|promise-compat\\.js))",
+      "source": "/style.css",
       "headers": [
         {
           "key": "Cache-Control",
-          "value": "public, max-age=31536000, immutable"
+          "value": "no-cache, must-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/vendor/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "public, max-age=86400"
         }
       ]
     },
