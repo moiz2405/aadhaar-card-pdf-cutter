@@ -7,8 +7,12 @@ const {
 } = require('../lib/resume-service.cjs');
 
 function sendJson(res, status, payload) {
-  res.status(status).setHeader('Cache-Control', 'no-store');
-  res.json(payload);
+  // Vercel serverless functions receive a raw http.ServerResponse (no
+  // Express-style res.status()/res.json()), so set headers explicitly.
+  res.statusCode = status;
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  res.setHeader('Cache-Control', 'no-store');
+  res.end(JSON.stringify(payload));
 }
 
 function readBody(req) {
