@@ -34,6 +34,7 @@ const zoomInput = $('pp-zoom');
 const zoomVal = $('pp-zoom-val');
 const autoBtn = $('pp-auto');
 const compareBtn = $('pp-compare');
+const maskBtn = $('pp-mask');
 const resetBtn = $('pp-reset');
 const brightInput = $('pp-bright');
 const contrastInput = $('pp-contrast');
@@ -54,6 +55,7 @@ let view = { zoom: 1, panX: 0, panY: 0 }; // pan in target px
 let enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
 let bg = { mode: 'red', custom: '#E53935', tol: 24 };
 let comparing = false;
+let maskView = false;
 let autoCache = { file: null, canvas: null };
 let photoCanvas = null;  // final single photo at print px
 let sheetCanvas = null;  // final 300 DPI grid
@@ -64,8 +66,17 @@ let toastTimer = null;
 // Smart cut-out state. The ML mask is computed once per photo at a capped
 // resolution, then re-framed per render with the same pan/zoom math as the
 // photo itself, so mask and image can never drift apart.
-const mlState = { key: null, maskCanvas: null, failed: false };
+const mlState = { key: null, maskCanvas: null, maskDims: null, failed: false };
 let mlPromise = null;
+
+function resetMLState() {
+  mlState.key = null; mlState.maskCanvas = null; mlState.maskDims = null; mlState.failed = false;
+  maskView = false;
+  if (typeof maskBtn !== 'undefined' && maskBtn) {
+    maskBtn.classList.remove('active');
+    maskBtn.setAttribute('aria-pressed', 'false');
+  }
+}
 
 function mlPaths() {
   // NOTE: dynamic import() resolves relative to THIS script file's URL
@@ -96,13 +107,14 @@ function targetDims() {
 
 /* ---------------- Upload ---------------- */
 function setControlsEnabled(on) {
-  [autoBtn, compareBtn, resetBtn, brightInput, contrastInput, satInput,
+  [autoBtn, compareBtn, maskBtn, resetBtn, brightInput, contrastInput, satInput,
     zoomInput, tolInput, customColor, ...swatches, ...exportBtns,
   ].forEach((el) => { el.disabled = !on; });
   if (!on) {
     comparing = false;
     compareBtn.setAttribute('aria-pressed', 'false');
     compareBtn.classList.remove('active');
+    resetMLState();
   }
 }
 
@@ -164,7 +176,7 @@ async function onFileSelected(file) {
     srcFile = file;
     srcImg = downscaleToWork(decoded);
     autoCache = { file: null, canvas: null };
-    mlState.key = null; mlState.maskCanvas = null; mlState.failed = false;
+    resetMLState();
     fileName = file.name || 'passport';
     view = { zoom: 1, panX: 0, panY: 0 };
     enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
@@ -205,7 +217,7 @@ dropzone.addEventListener('drop', (e) => {
 
 $('pp-start-over').addEventListener('click', () => {
   srcFile = null; srcImg = null;
-  mlState.key = null; mlState.maskCanvas = null; mlState.failed = false;
+  resetMLState();
   photoCanvas = null; sheetCanvas = null; sheetLayout = null;
   autoCache = { file: null, canvas: null };
   fileInput.value = '';
@@ -376,6 +388,13 @@ compareBtn.addEventListener('click', () => {
   renderAll();
 });
 
+maskBtn.addEventListener('click', () => {
+  maskView = !maskView;
+  maskBtn.classList.toggle('active', maskView);
+  maskBtn.setAttribute('aria-pressed', String(maskView));
+  renderAll();
+});
+
 resetBtn.addEventListener('click', () => {
   enhance = { auto: false, bright: 100, contrast: 100, sat: 100 };
   comparing = false;
@@ -426,13 +445,18 @@ function bgFloodSwap(targetCanvas, hexColor, tolerance) {
 async function ensureMLMask() {
   if (mlState.key === srcFile && mlState.maskCanvas) return true;
   if (!window.PassportML) throw new Error('Background AI failed to load.');
-  const { confidence } = await window.PassportML.segmentPerson(mlPaths(), srcImg.bmp);
+  const { confidence, width, height } = await window.PassportML.segmentPerson(mlPaths(), srcImg.bmp);
+  // Geometry guard: a scrambled buffer must fall back, never render.
+  if (!window.PassportML.validMaskGeometry(confidence, width, height)) {
+    throw new Error(
+      `Background AI returned an unusable mask (${confidence ? confidence.length : 0} values for ${width}x${height}).`,
+    );
+  }
   const keep = window.PassportML.confidenceToKeep(confidence);
-  const side = Math.round(Math.sqrt(keep.length));
   const small = document.createElement('canvas');
-  small.width = side; small.height = side;
+  small.width = width; small.height = height;
   const sctx = small.getContext('2d');
-  const sImg = sctx.createImageData(side, side);
+  const sImg = sctx.createImageData(width, height);
   for (let i = 0; i < keep.length; i += 1) {
     sImg.data[i * 4] = keep[i];
     sImg.data[i * 4 + 1] = keep[i];
@@ -451,6 +475,7 @@ async function ensureMLMask() {
   mctx.drawImage(small, 0, 0, mw, mh);
   mlState.key = srcFile;
   mlState.maskCanvas = mc;
+  mlState.maskDims = { w: width, h: height };
   mlState.failed = false;
   return true;
 }
@@ -553,7 +578,29 @@ function renderPhoto() {
   // Display 1:1 (CSS scales responsively).
   canvas.width = t.w; canvas.height = t.h;
   canvas.getContext('2d').drawImage(out, 0, 0);
+  // Mask inspector: display-only grayscale of the AI keep-map. photoCanvas
+  // (and therefore grid + exports) is never touched by this view.
+  if (maskView && mlMaskReady()) drawMaskView();
   return out;
+}
+
+// Renders the cached ML keep-map into the display canvas using the same
+// cover transform as the photo, so any misalignment is directly visible.
+function drawMaskView() {
+  const t = targetDims();
+  const v = document.createElement('canvas');
+  v.width = t.w; v.height = t.h;
+  const vctx = v.getContext('2d');
+  coverDrawRaw(vctx, mlState.maskCanvas, t.w, t.h);
+  const pixels = vctx.getImageData(0, 0, t.w, t.h);
+  const d = pixels.data;
+  for (let i = 0; i < t.w * t.h; i += 1) {
+    d[i * 4 + 1] = d[i * 4];
+    d[i * 4 + 2] = d[i * 4];
+    d[i * 4 + 3] = 255;
+  }
+  const dctx = canvas.getContext('2d');
+  dctx.putImageData(pixels, 0, 0);
 }
 
 // Cover-fit draw against an explicit source (filter applied by the caller).
@@ -650,7 +697,9 @@ async function renderAll() {
     renderPhoto();
     renderGrid();
     if (statusEl.textContent.startsWith('Preparing background AI')) {
-      statusEl.textContent = mlMaskReady() ? '' : statusEl.textContent;
+      statusEl.textContent = (mlMaskReady() && mlState.maskDims)
+        ? `Background AI ready (mask ${mlState.maskDims.w}×${mlState.maskDims.h}).`
+        : statusEl.textContent;
     }
   } catch (err) {
     console.error(err);

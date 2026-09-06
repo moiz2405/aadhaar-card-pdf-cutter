@@ -36,9 +36,19 @@ test('confidence mapping honors a custom window', () => {
 });
 
 test('engine module exposes the lazy segmentation API', () => {
-  for (const fn of ['confidenceToKeep', 'extractPersonConfidence', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
+  for (const fn of ['confidenceToKeep', 'validMaskGeometry', 'extractPersonConfidence', 'tagError', 'ensureEngine', 'segmentPerson', 'dispose']) {
     assert.equal(typeof ML[fn], 'function', `missing export: ${fn}`);
   }
+});
+
+test('mask geometry guard accepts exact buffers and rejects the rest', () => {
+  const ok = new Float32Array(256 * 256);
+  assert.equal(ML.validMaskGeometry(ok, 256, 256), true);
+  assert.equal(ML.validMaskGeometry(new Float32Array(100), 256, 256), false);
+  assert.equal(ML.validMaskGeometry(ok, 0, 256), false);
+  assert.equal(ML.validMaskGeometry(ok, 256, -1), false);
+  assert.equal(ML.validMaskGeometry(null, 256, 256), false);
+  assert.equal(ML.validMaskGeometry(ok, NaN, 256), false);
 });
 
 function stubMask(values, w, h, float) {
