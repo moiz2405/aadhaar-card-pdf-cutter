@@ -47,6 +47,21 @@ test('server bundle allowlist covers every static entry file', () => {
   ]) {
     assert.ok(fs.existsSync(path.join(ROOT, file)), `expected vendored file: ${file}`);
   }
+  // Guard against the recurring live-404 class: every page-referenced local
+  // script must be reachable from the server bundle (explicitly or via a
+  // covering glob like vendor/**).
+  const vercelIncludes = vercel.functions['server.js'].includeFiles || '';
+  for (const page of ['index.html', 'resume.html', 'passport.html']) {
+    const html = fs.readFileSync(path.join(ROOT, page), 'utf8');
+    for (const match of html.matchAll(/<script\s+src="([^"]+)"/g)) {
+      const src = match[1].split('?')[0].replace(/^\.\//, '');
+      if (/^(https?:)?\/\//.test(src)) continue;
+      const covered = src.startsWith('vendor/')
+        ? vercelIncludes.includes('vendor/**')
+        : vercelIncludes.includes(src);
+      assert.ok(covered, `${page} loads ${src}, missing from server includeFiles (live 404)`);
+    }
+  }
   const serverSrc = fs.readFileSync(path.join(ROOT, 'server.js'), 'utf8');
   assert.ok(serverSrc.includes('.wasm'), 'server.js must serve .wasm for the AI runtime');
   assert.ok(serverSrc.includes('.tflite'), 'server.js must serve the .tflite model');
